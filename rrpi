@@ -1,0 +1,1045 @@
+#!/bin/bash
+
+RASPI_HOST=raspberrypi.local
+RASPI_SSH=pi@$RASPI_HOST
+
+####################################################################
+# Configuration (from ~/.myconf)
+####################################################################
+
+eval $(cat <<EOF | lua -
+local function dump(t, p)
+    if type(t) == "table" then
+        for k, v in pairs(t) do dump(v, (p and p.."_" or "")..k) end
+    else
+        local s = tostring(t)
+        if not s:match "\n" then print(p:upper().."='"..s.."'") end
+    end
+end
+local conf = {}
+assert(loadfile(os.getenv"HOME".."/.myconf", "t", conf))()
+dump(conf)
+EOF
+)
+
+####################################################################
+# Download image and activate SSH at first boot
+####################################################################
+
+# 64-bit image: https://downloads.raspberrypi.org/raspios_arm64/images/
+
+RASPIOS_DIR=~/raspios
+RASPIOS=https://downloads.raspberrypi.org/raspios_lite_arm64/images/raspios_lite_arm64-2022-04-07/2022-04-04-raspios-bullseye-arm64-lite.img.xz
+
+IMG=$RASPIOS_DIR/$(basename $RASPIOS .xz)
+
+prepare_image()
+{
+    mkdir -p $RASPIOS_DIR
+    if ! [ -f $IMG ]
+    then
+        wget -c $RASPIOS -O $RASPIOS_DIR/$(basename $RASPIOS)
+        ( cd $RASPIOS_DIR && unxz $(basename $RASPIOS) )
+    fi
+    local BOOT=$RASPIOS_DIR/boot
+    mkdir -p $BOOT
+    echo "Mounting $IMG to activate Wifi and SSH on first boot"
+    sudo mount -t vfat -o loop,offset=$((8192*512)) $IMG $BOOT
+    sudo touch $BOOT/ssh
+    echo -n "Wifi SSID    : "; read -r WIFI_SSID
+    if [ -n "$WIFI_SSID" ]
+    then
+        echo -n "Wifi password: "; read -r WIFI_PASSWORD
+        echo -n "Wifi country : "; read -r WIFI_COUNTRY
+        sudo tee $BOOT/wpa_supplicant.conf >/dev/null <<EOF
+country=$WIFI_COUNTRY
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+
+network={
+    ssid="$WIFI_SSID"
+    psk="$WIFI_PASSWORD"
+}
+EOF
+    fi
+    sudo umount $BOOT
+    sync
+}
+
+####################################################################
+# Flash image
+####################################################################
+
+flash_image()
+{
+    echo "Unplug and replug the SD card or USB disk for autodetection..."
+    awk '$4~/^sd.$/ {print $4}' /proc/partitions > /tmp/parts
+    local PART=""
+    while [ -z "$PART" ]
+    do
+        awk '$4~/^sd.$/ {print $4}' /proc/partitions > /tmp/parts2
+        PART=$(comm -1 -3 /tmp/parts /tmp/parts2)
+        mv /tmp/parts2 /tmp/parts
+    done
+    rm /tmp/parts
+    echo -n "Ready to write $(basename $IMG) to /dev/$PART? "
+    read -r
+    case "$REPLY" in
+        y|Y|o|O)    sudo dd if=$IMG of=/dev/$PART bs=8M status=progress ;;
+        *)          echo "aborted" ;;
+    esac
+    sync
+}
+
+####################################################################
+# raspi-config
+####################################################################
+
+raspi_config()
+{
+    ssh -t $RASPI_SSH "sudo raspi-config"
+}
+
+####################################################################
+# ssh
+####################################################################
+
+open_ssh()
+{
+    ssh -t $RASPI_SSH
+}
+
+
+####################################################################
+# push ssh keys
+####################################################################
+
+push_keys()
+{
+    [ -e ~/.ssh/id_rsa.pub ] || ssh-keygen
+    ssh-copy-id $RASPI_SSH
+    echo -n "Press any key"; read -r
+}
+
+####################################################################
+# mc & sshfs
+####################################################################
+
+sshfs_mount()
+{
+    MNT=$RASPIOS_DIR/mnt-$RASPI_HOST
+    MNT_ROOT=$RASPIOS_DIR/mnt-$RASPI_HOST-root
+    mkdir -p $MNT $MNT_ROOT
+    sshfs $RASPI_SSH:/home/pi $MNT
+    sshfs $RASPI_SSH:/ $MNT_ROOT
+}
+
+sshfs_umount()
+{
+    umount $MNT
+    umount $MNT_ROOT
+}
+
+mc_sshfs()
+{
+    sshfs_mount
+    mc . $MNT
+    sshfs_umount
+}
+
+####################################################################
+# Basic configuration
+####################################################################
+
+install_base()
+{
+    local PACKETS="git exa grc fzf rlwrap htop ripgrep fd-find tmux mc neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools"
+    ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
+
+    sshfs_mount
+
+    cat <<\EOF > $MNT/.bash_aliases
+export PATH=~/.local/bin:~/bin:$PATH
+
+export EDITOR=nvim
+export VISUAL=nvim
+
+# Aliases
+
+alias ls="exa --classify"
+alias ll='ls -lh'
+alias la='ll -a'
+#alias lt='ll -rt'
+alias lt='ll --sort newest'
+
+alias grep='grep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}'
+
+alias more=less
+alias df='grc df -h'
+alias du='grc du -h'
+
+alias vi=nvim
+
+function gd()
+{
+    local filepath="$(fd "$1" | fzf)"
+    [ -f "$filepath" ] && filepath="$(dirname "$filepath")"
+    cd "$filepath"
+}
+EOF
+
+    cat <<EOF > $MNT/.tmux.conf
+# Use C-a instead of C-b
+#set -g prefix C-a
+#unbind-key C-b
+#bind-key C-a send-prefix
+
+# reload config file (change file location to your the tmux.conf you want to use)
+bind r source-file ~/.tmux.conf
+
+set -g base-index 1
+
+# switch panes using Alt-arrow without prefix
+bind -n M-Left select-pane -L
+bind -n M-Right select-pane -R
+bind -n M-Up select-pane -U
+bind -n M-Down select-pane -D
+
+# disable switching panes with Escape
+set -s escape-time 0
+
+# switch windows using Alt-Shift-arrow without prefix
+bind -n M-S-Left select-window -t:-
+bind -n M-S-Right select-window -t:+
+
+# Enable mouse control (clickable windows, panes, resizable panes)
+#set -g mouse-select-window on
+#set -g mouse-select-pane on
+#set -g mouse-resize-pane on
+
+# Enable mouse mode (tmux 2.1 and above)
+set -g mouse on
+
+# don't rename windows automatically
+#set-option -g allow-rename off
+
+# open new panes on the same directory
+bind c new-window -c "#{pane_current_path}"
+bind '"' split-window -c "#{pane_current_path}"
+bind % split-window -h -c "#{pane_current_path}"
+
+set-option -g history-limit 10000
+
+# Copy mode
+# - https://superuser.com/questions/395158/tmux-copy-mode-select-text-block
+# - https://unix.stackexchange.com/questions/450184/in-tmux-how-to-set-shortcut-for-copy-mode
+bind-key -n 'C-M-c' copy-mode       # Ctrl-Alt-C => copy mode
+setw -g mode-keys vi
+unbind-key -T copy-mode-vi v
+bind-key -T copy-mode-vi 'v' send -X begin-selection     # Begin selection in copy mode.
+bind-key -T copy-mode-vi 'C-v' send -X rectangle-toggle  # Begin selection in copy mode.
+bind-key -T copy-mode-vi 'y' send -X copy-selection      # Yank selection in copy mode.
+
+# Some parameters from https://github.com/tmux-plugins/tmux-sensible
+
+# Increase tmux messages display duration from 750ms to 4s
+set -g display-time 4000
+
+# Emacs key bindings in tmux command prompt (prefix + :) are better than
+# vi keys, even for vim users
+set -g status-keys emacs
+
+# Focus events enabled for terminals that support them
+set -g focus-events on
+
+# interface
+
+#------------
+# pane
+#------------
+#set -g mouse-select-pane on
+#set -g pane-border-fg blue
+#set -g pane-active-border-fg green
+
+#------------
+# tabs
+#------------
+setw -g window-status-format "#[fg=white]#[bg=blue] #I #W "
+setw -g window-status-current-format "#[fg=black]#[bg=green] #I #W "
+#setw -g window-status-content-attr bold,blink,reverse
+
+#------------
+# status bar
+#------------
+set-option -g status-position bottom
+set -g status-fg white
+set -g status-bg blue
+set -g status-left-length 16
+set -g status-left ' #S | '
+set -g status-right-length 60
+set -g status-right '%d/%m/%Y | %H:%M '
+EOF
+
+    ssh $RASPI_SSH "
+        sudo ufw reset
+        sudo ufw allow from 10.0.0.0/8
+        sudo ufw allow from 172.16.0.0/12
+        sudo ufw allow from 192.168.0.0/16
+        sudo ufw allow \"SSH\"
+        pgrep apache && sudo ufw allow \"WWW Full\"
+        sudo ufw enable
+        sudo ufw status verbose numbered
+    "
+
+    DYN_IP=$(curl -s http://ipinfo.io/ip)
+
+    cat <<EOF > $MNT/jail.local
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12
+findtime = 15m
+bantime = 4w
+maxretry = 3
+
+[sshd]
+enabled  = true
+mode = agressive
+bantime = 4w
+
+# Ban IP and report to AbuseIPDB for SSH Brute-Forcing
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_SSH", abuseipdb_category="18,22"]
+
+EOF
+    ssh $RASPI_SSH "sudo mv -f jail.local /etc/fail2ban/jail.d/jail.local; sudo chown root:root /etc/fail2ban/jail.d/jail.local"
+    ssh $RASPI_SSH "sudo service fail2ban restart"
+
+    # Dynamic DNS with Gandi
+    if [ -n "$GANDI_API_KEY" ]
+    then
+        mkdir -p $MNT/bin
+        cat <<\EOF > $MNT/bin/gdns
+#!/bin/bash
+
+API_KEY=GANDI_API_KEY
+TTL=1800
+ENDPOINT=https://dns.api.gandi.net/api/v5
+DOMAIN=GANDI_DOMAIN
+SUBDOMAIN=GANDI_SUBDOMAIN
+CERTIFICATE_RENEW=CERTBOT_RENEW
+case GANDI_IPVERSION in
+    4) TYPE=A ;;
+    6) TYPE=AAAA ;;
+esac
+
+date
+
+# Get dynamic IP
+case GANDI_IPVERSION in
+    4) DYN_IP=$(curl -s http://ipinfo.io/ip) ;;
+    6) DYN_IP=$(hostname -I | egrep -o '[0-9a-z:]+:[0-9a-z:]+' | head -n 1) ;;
+esac
+echo "Dynamic IP: $DYN_IP"
+[ -z "$DYN_IP" ] && exit 1
+
+# Get the current DNS IP from the cache
+CACHE=/tmp/gdns.cache
+if [ -f $CACHE ]
+then
+    DNS_IP=$(cat $CACHE)
+    echo "DNS IP    : $DNS_IP (from cache)"
+fi
+
+# Get the DNS IP from the DNS record if the cache is empty
+if [ -z "$DNS_IP" ]
+then
+
+    # Get the zone UUID for the domain
+    UUID=$(curl -s -X GET \
+                -H "Content-Type: application/json" \
+                -H "X-Api-Key: $API_KEY" \
+                $ENDPOINT/domains/$DOMAIN \
+           | jq '.zone_uuid' | tr -d '"')
+    #echo "UUID      : $UUID"
+    [ -z "$UUID" ] && exit 1
+
+    # Get the current DNS record configuration
+    DNS_IP=$(curl -s -X GET \
+                -H "Content-Type: application/json" \
+                -H "X-Api-Key: $API_KEY" \
+                $ENDPOINT/zones/$UUID/records/$SUBDOMAIN/$TYPE \
+             | jq '.rrset_values[0]' | tr -d '"')
+    echo "DNS IP    : $DNS_IP (from DNS record)"
+
+    [ -n "$DNS_IP" ] && echo $DNS_IP > $CACHE
+
+fi
+[ -z "$DNS_IP" ] && exit 1
+
+# Update the DNS record if the IP has changed
+if [ "$DYN_IP" == "$DNS_IP" ]
+then
+    echo "The DNS record is uptodate"
+else
+    echo "The DNS record needs to be updated"
+    if [ -z "$UUID" ]
+    then
+        # Get the zone UUID for the domain
+        UUID=$(curl -s -X GET \
+                    -H "Content-Type: application/json" \
+                    -H "X-Api-Key: $API_KEY" \
+                    $ENDPOINT/domains/$DOMAIN \
+            | jq '.zone_uuid' | tr -d '"')
+        #echo "UUID      : $UUID"
+    fi
+    curl -X PUT \
+        -H "Content-Type: application/json" \
+        -H "X-Api-Key: $API_KEY" \
+        -d "{\"rrset_ttl\": $TTL, \"rrset_values\": [\"$DYN_IP\"]}" \
+        $ENDPOINT/zones/$UUID/records/$SUBDOMAIN/$TYPE
+    rm $CACHE
+fi
+
+if $CERTIFICATE_RENEW && sudo test -e /etc/letsencrypt/live/$SUBDOMAIN.$DOMAIN/cert.pem
+then
+    NOW=$(date +%s)
+    CERT=$(sudo stat -L -c %Y /etc/letsencrypt/live/$SUBDOMAIN.$DOMAIN/cert.pem)
+    AGE=$(( (NOW - CERT) / (24*60*60) ))
+    echo "SSL certificate: $AGE days"
+    if (( AGE > 60 ))
+    then
+        echo "The SSL certificate is too old and will be renewed"
+        sudo certbot renew
+    fi
+fi
+EOF
+        sed -i "s/GANDI_API_KEY/$GANDI_API_KEY/" $MNT/bin/gdns
+        sed -i "s/GANDI_DOMAIN/$GANDI_DOMAIN/" $MNT/bin/gdns
+        sed -i "s/GANDI_SUBDOMAIN/$GANDI_SUBDOMAIN/" $MNT/bin/gdns
+        sed -i "s/GANDI_IPVERSION/$GANDI_IPVERSION/" $MNT/bin/gdns
+        sed -i "s/CERTBOT_RENEW/$CERTBOT_RENEW/" $MNT/bin/gdns
+        chmod +x $MNT/bin/gdns
+
+        # The DNS status is updated by status
+        #ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/gdns >/tmp/gdns.log 2>&1' | sudo tee /etc/cron.d/gdns"
+    fi
+
+    mkdir -p $MNT/bin
+    cat <<\EOF_status > $MNT/bin/status
+#!/bin/bash
+cat <<EOF
+---
+title: "Pi status"
+date: "$(date)"
+---
+
+## Server
+
+~~~
+$(neofetch --stdout)
+
+$(sensors | awk '$1~/^temp/ {print}')
+
+$(LANG=C df -h /)
+~~~
+
+## DNS
+
+~~~
+$(/home/pi/bin/gdns || echo "DNS status N/A")
+~~~
+
+EOF
+EOF_status
+    chmod +x $MNT/bin/status
+    ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/status | pandoc --self-contained --to html5 >/var/www/html/status.html' | sudo tee /etc/cron.d/status"
+    ssh $RASPI_SSH "sudo touch /var/www/html/status.html"
+    ssh $RASPI_SSH "sudo chown pi:pi /var/www/html/status.html"
+    ssh $RASPI_SSH "/home/pi/bin/status | pandoc --self-contained --to html5 >/var/www/html/status.html"
+
+    cat <<\EOF_netmon > $MNT/bin/netmon
+#/bin/bash
+
+CSV=/var/www/html/netmon.csv
+HTML=/var/www/html/netmon.html
+PID=/tmp/netmon.pid
+
+[ -f $PID ] && exit
+
+echo $$ > $PID
+trap "rm -f $PID" EXIT
+
+NEW=false
+
+check()
+{
+    ( timeout 2 ping -4 -c1 $1 || timeout 2 ping -4 -c1 $1 || timeout 2 ping -4 -c1 $1 ) >/dev/null 2>&1 \
+        && echo ok || echo FAIL
+}
+
+init_csv()
+{
+    if ! [ -f $CSV ]
+    then
+        NEW=true
+        cat <<EOF | sudo tee $CSV >/dev/null
+date|time|timestamp|router|box|web1|web2|web3
+----|----|---------|------|---|----|----|----
+EOF
+    fi
+}
+
+check_connections()
+{
+    local ROUTER=" "
+    local BOX=" "
+    local WEB1=" "
+    local WEB2=" "
+    local WEB3=" "
+
+    local T=$(date +"%Y/%m/%d|%H:%M:%S|%s")
+
+    ROUTER=$(check ROUTER_IP)
+    [ "$ROUTER" = "ok" ] && BOX=$(check BOX_IP)
+    [ "$BOX"    = "ok" ] && WEB1=$(check WEB1_URL)
+    [ "$BOX"    = "ok" ] && [ "$WEB1" = "FAIL" ] && WEB2=$(check WEB2_URL)
+    [ "$BOX"    = "ok" ] && [ "$WEB1-$WEB2" = "FAIL-FAIL" ] && WEB3=$(check WEB3_URL)
+
+    local res="$ROUTER|$BOX|$WEB1|$WEB2|$WEB3"
+
+    if $NEW || [[ "$res" =~ "FAIL" ]]
+    then
+        echo "$T|$res" | sudo tee -a $CSV >/dev/null
+    fi
+
+    NEW=false
+}
+
+publish()
+{
+    if ! [ -f $HTML ] || [ $CSV -nt $HTML ]
+    then
+        cat <<EOF | pandoc --self-contained --to html5 | sudo tee $HTML >/dev/null
+---
+title: "Network Monitor"
+date: "$(date)"
+---
+
+$( (head -2 $CSV; sed '1,2d' $CSV | tac) | cut -d"|" -f1,2,4,5,6,7,8)
+
+EOF
+    fi
+}
+
+rebooting()
+{
+    ## The internet box reboots at 4:00 -- ignore errors between 2:45 and 4:15 (valid for winter/summer time)
+    #local T=$(( $(date '+%H*60+%M' | sed 's/+0/+/g') ))
+    #[ $T -ge $((2*60+45)) ] && [ $T -le $((4*60+15)) ]
+    false # currently the box is not rebooted every night, TODO: monitor the internet connection and restart the box when the connection is lost
+}
+
+while true
+do
+    init_csv
+    if ! rebooting
+    then
+        check_connections
+        publish
+    fi
+    sleep 15s
+done
+EOF_netmon
+    sed -i "s/ROUTER_IP/$NETMON_ROUTER/" $MNT/bin/netmon
+    sed -i "s/BOX_IP/$NETMON_BOX/" $MNT/bin/netmon
+    sed -i "s/WEB1_URL/$NETMON_WEB_1/" $MNT/bin/netmon
+    sed -i "s/WEB2_URL/$NETMON_WEB_2/" $MNT/bin/netmon
+    sed -i "s/WEB3_URL/$NETMON_WEB_3/" $MNT/bin/netmon
+    chmod +x $MNT/bin/netmon
+    if $NETMON_ENABLE
+    then
+        ssh $RASPI_SSH "echo '*/5 * * * * pi nohup bash /home/pi/bin/netmon &' | sudo tee /etc/cron.d/netmon"
+    fi
+
+    sshfs_umount
+}
+
+####################################################################
+# Apache
+####################################################################
+
+install_apache()
+{
+    ssh $RASPI_SSH "sudo apt install \
+        apache2 mariadb-server libapache2-mod-php \
+        php-gd php-json php-mysql php-curl php-mbstring php-intl php-imagick php-xml php-zip \
+        certbot python3-certbot-apache \
+        sqlite3 jq \
+    "
+
+    sshfs_mount
+
+    # .htaccess
+
+    # https://raspberry-pi.fr/activer-fichiers-htaccess-raspbian/
+    ssh $RASPI_SSH "sudo sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf"
+    ssh $RASPI_SSH "sudo /etc/init.d/apache2 restart"
+
+    ssh $RASPI_SSH "[ -f /var/www/html/index.html ] && sudo mv /var/www/html/index.html /var/www/html/noindex.html"
+    cat <<\EOF > $MNT/.htaccess
+# Generated by https://www.htaccessredirect.net/
+
+# Custom 404 errors
+ErrorDocument 404 /404.html
+
+# Prevent directory listings
+Options All -Indexes
+
+# Prevent viewing of .htaccess file
+<Files .htaccess>
+order allow,deny
+deny from all
+</Files>
+
+# Block bad bots
+RewriteEngine On
+RewriteCond %{HTTP_USER_AGENT} ^BlackWidow [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Bot\ mailto:craftbot@yahoo.com [OR]
+RewriteCond %{HTTP_USER_AGENT} ^ChinaClaw [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Custo [OR]
+RewriteCond %{HTTP_USER_AGENT} ^DISCo [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Download\ Demon [OR]
+RewriteCond %{HTTP_USER_AGENT} ^eCatch [OR]
+RewriteCond %{HTTP_USER_AGENT} ^EirGrabber [OR]
+RewriteCond %{HTTP_USER_AGENT} ^EmailSiphon [OR]
+RewriteCond %{HTTP_USER_AGENT} ^EmailWolf [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Express\ WebPictures [OR]
+RewriteCond %{HTTP_USER_AGENT} ^ExtractorPro [OR]
+RewriteCond %{HTTP_USER_AGENT} ^EyeNetIE [OR]
+RewriteCond %{HTTP_USER_AGENT} ^FlashGet [OR]
+RewriteCond %{HTTP_USER_AGENT} ^GetRight [OR]
+RewriteCond %{HTTP_USER_AGENT} ^GetWeb! [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Go!Zilla [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Go-Ahead-Got-It [OR]
+RewriteCond %{HTTP_USER_AGENT} ^GrabNet [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Grafula [OR]
+RewriteCond %{HTTP_USER_AGENT} ^HMView [OR]
+RewriteCond %{HTTP_USER_AGENT} HTTrack [NC,OR]
+RewriteCond %{HTTP_USER_AGENT} ^Image\ Stripper [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Image\ Sucker [OR]
+RewriteCond %{HTTP_USER_AGENT} Indy\ Library [NC,OR]
+RewriteCond %{HTTP_USER_AGENT} ^InterGET [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Internet\ Ninja [OR]
+RewriteCond %{HTTP_USER_AGENT} ^JetCar [OR]
+RewriteCond %{HTTP_USER_AGENT} ^JOC\ Web\ Spider [OR]
+RewriteCond %{HTTP_USER_AGENT} ^larbin [OR]
+RewriteCond %{HTTP_USER_AGENT} ^LeechFTP [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Mass\ Downloader [OR]
+RewriteCond %{HTTP_USER_AGENT} ^MIDown\ tool [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Mister\ PiX [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Navroad [OR]
+RewriteCond %{HTTP_USER_AGENT} ^NearSite [OR]
+RewriteCond %{HTTP_USER_AGENT} ^NetAnts [OR]
+RewriteCond %{HTTP_USER_AGENT} ^NetSpider [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Net\ Vampire [OR]
+RewriteCond %{HTTP_USER_AGENT} ^NetZIP [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Octopus [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Offline\ Explorer [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Offline\ Navigator [OR]
+RewriteCond %{HTTP_USER_AGENT} ^PageGrabber [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Papa\ Foto [OR]
+RewriteCond %{HTTP_USER_AGENT} ^pavuk [OR]
+RewriteCond %{HTTP_USER_AGENT} ^pcBrowser [OR]
+RewriteCond %{HTTP_USER_AGENT} ^RealDownload [OR]
+RewriteCond %{HTTP_USER_AGENT} ^ReGet [OR]
+RewriteCond %{HTTP_USER_AGENT} ^SiteSnagger [OR]
+RewriteCond %{HTTP_USER_AGENT} ^SmartDownload [OR]
+RewriteCond %{HTTP_USER_AGENT} ^SuperBot [OR]
+RewriteCond %{HTTP_USER_AGENT} ^SuperHTTP [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Surfbot [OR]
+RewriteCond %{HTTP_USER_AGENT} ^tAkeOut [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Teleport\ Pro [OR]
+RewriteCond %{HTTP_USER_AGENT} ^VoidEYE [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Web\ Image\ Collector [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Web\ Sucker [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebAuto [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebCopier [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebFetch [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebGo\ IS [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebLeacher [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebReaper [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebSauger [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Website\ eXtractor [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Website\ Quester [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebStripper [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebWhacker [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WebZIP [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Wget [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Widow [OR]
+RewriteCond %{HTTP_USER_AGENT} ^WWWOFFLE [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Xaldon\ WebSpider [OR]
+RewriteCond %{HTTP_USER_AGENT} ^Zeus
+RewriteRule ^.* - [F,L]
+EOF
+    ssh $RASPI_SSH "sudo mv .htaccess /var/www/html/.htaccess"
+
+    ssh $RASPI_SSH "
+        sudo ufw allow \"WWW Full\"
+    "
+
+    cat <<EOF > $MNT/apache.local
+[apache-auth]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="18"]
+
+[apache-badbots]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="18"]
+
+[apache-botsearch]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="18"]
+
+[apache-fakegooglebot]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="19"]
+
+[apache-modsecurity]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+[apache-nohome]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+[apache-noscript]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+[apache-overflows]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+[apache-pass]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+[apache-shellshock]
+enabled  = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+[php-url-fopen]
+enabled = true
+action = %(action_)s
+         %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
+
+EOF
+    ssh $RASPI_SSH "sudo mv -f apache.local /etc/fail2ban/jail.d/apache.local; sudo chown root:root /etc/fail2ban/jail.d/apache.local"
+    ssh $RASPI_SSH "sudo service fail2ban restart"
+
+    sshfs_umount
+}
+
+####################################################################
+# Radicale
+####################################################################
+
+install_radicale()
+{
+    ssh $RASPI_SSH "sudo apt install python3-pip"
+    ssh $RASPI_SSH "python3 -m pip install --upgrade radicale"
+
+    sshfs_mount
+
+    mkdir -p $MNT/.config/radicale
+    cat <<\EOF > $MNT/.config/radicale/config
+[server]
+# Bind all addresses
+hosts = 0.0.0.0:5232, [::]:5232
+
+[auth]
+type = htpasswd
+htpasswd_filename = ~/.config/radicale/users
+htpasswd_encryption = md5
+
+[storage]
+filesystem_folder = ~/.local/var/lib/radicale/collections
+EOF
+    if ! [ -f $MNT/.config/radicale/users ]
+    then
+        echo -n "Radicale user    : "; read -r RADICALE_USER
+        echo -n "Radicale password: "; read -r RADICALE_PASSWORD
+        htpasswd -mbc $MNT/.config/radicale/users $RADICALE_USER $RADICALE_PASSWORD
+    fi
+    mkdir -p $MNT/.config/systemd/user/
+    cat <<\EOF > $MNT/.config/systemd/user/radicale.service
+[Unit]
+Description=A simple CalDAV (calendar) and CardDAV (contact) server
+
+[Service]
+ExecStart=/usr/bin/env python3 -m radicale
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+
+    sshfs_umount
+
+    ssh $RASPI_SSH "systemctl --user enable radicale"
+    ssh $RASPI_SSH "systemctl --user stop radicale"
+    ssh $RASPI_SSH "systemctl --user start radicale"
+}
+
+####################################################################
+# qBittorrent
+####################################################################
+
+install_qbittorrent()
+{
+    ssh $RASPI_SSH "sudo apt install qbittorrent-nox tmux"
+
+    sshfs_mount
+
+    mkdir -p $MNT/.config/qBittorrent $MNT/Downloads
+    cat <<\EOF > $MNT/.config/qBittorrent/qBittorrent.conf
+[AutoRun]
+enabled=false
+program=
+
+[BitTorrent]
+Session\CreateTorrentSubfolder=true
+Session\DisableAutoTMMByDefault=true
+Session\DisableAutoTMMTriggers\CategoryChanged=false
+Session\DisableAutoTMMTriggers\CategorySavePathChanged=true
+Session\DisableAutoTMMTriggers\DefaultSavePathChanged=true
+Session\SlowTorrentsDownloadRate=8
+Session\SlowTorrentsUploadRate=8
+
+[Core]
+AutoDeleteAddedTorrentFile=Never
+
+[LegalNotice]
+Accepted=true
+
+[Network]
+Cookies=@Invalid()
+
+[Preferences]
+Bittorrent\AddTrackers=false
+Bittorrent\MaxRatioAction=0
+Bittorrent\PeX=true
+Connection\GlobalDLLimitAlt=3000
+Connection\GlobalUPLimitAlt=300
+Connection\alt_speeds_on=false
+Downloads\PreAllocation=false
+Downloads\ScanDirsV2=@Variant(\0\0\0\x1c\0\0\0\x1\0\0\0&\0/\0h\0o\0m\0\x65\0/\0p\0i\0/\0\x44\0o\0w\0n\0l\0o\0\x61\0\x64\0s\0/\0\0\0\x2\0\0\0\0)
+Downloads\StartInPause=false
+Downloads\TempPath=/home/pi/Downloads/.temp/
+Downloads\TempPathEnabled=true
+Downloads\TorrentExportDir=/home/pi/Downloads/.torrents/
+Downloads\UseIncompleteExtension=true
+DynDNS\DomainName=changeme.dyndns.org
+DynDNS\Enabled=false
+DynDNS\Password=
+DynDNS\Service=0
+DynDNS\Username=
+General\UseRandomPort=false
+MailNotification\email=
+MailNotification\enabled=false
+MailNotification\password=
+MailNotification\req_auth=true
+MailNotification\req_ssl=false
+MailNotification\sender=qBittorrent_notification@example.com
+MailNotification\smtp_server=smtp.changeme.com
+MailNotification\username=
+Queueing\IgnoreSlowTorrents=true
+Scheduler\Enabled=true
+Scheduler\days=0
+Scheduler\end_time=@Variant(\0\0\0\xf\x4J\xa2\0)
+Scheduler\start_time=@Variant(\0\0\0\xf\x1\xb7t\0)
+WebUI\Address=*
+WebUI\AlternativeUIEnabled=false
+WebUI\AuthSubnetWhitelist=192.168.0.0/16
+WebUI\AuthSubnetWhitelistEnabled=true
+WebUI\CSRFProtection=true
+WebUI\ClickjackingProtection=true
+WebUI\HTTPS\Enabled=false
+WebUI\HostHeaderValidation=true
+WebUI\LocalHostAuth=false
+WebUI\Port=8888
+WebUI\RootFolder=
+WebUI\ServerDomains=*
+WebUI\UseUPnP=true
+WebUI\Username=admin
+EOF
+
+    sshfs_umount
+}
+
+####################################################################
+# Nextcloud
+####################################################################
+
+# https://raspberrytips.com/install-nextcloud-raspberry-pi/
+
+install_nextcloud()
+{
+    local NEXTCLOUD_URL=https://download.nextcloud.com/server/releases/nextcloud-26.0.1.tar.bz2
+
+    # NextCloud prerequisites
+    ssh $RASPI_SSH "sudo apt install apache2 mariadb-server libapache2-mod-php"
+    ssh $RASPI_SSH "sudo apt install php-gd php-json php-mysql php-curl php-mbstring php-intl php-imagick php-xml php-zip"
+    ssh $RASPI_SSH "sudo apt install certbot python3-certbot-apache"
+    ssh $RASPI_SSH "sudo apt install php-apcu php-gmp php-bcmath ffmpeg"
+
+    sshfs_mount
+
+    if ! [ -d $MNT_ROOT/var/www/html/nextcloud ]
+    then
+
+        # Download NextCloud
+        wget -c $NEXTCLOUD_URL -O $RASPIOS_DIR/$(basename $NEXTCLOUD_URL)
+
+        #echo "Copying $(basename $NEXTCLOUD_URL)"
+        mkdir -p $MNT/Downloads
+        cp -uv $RASPIOS_DIR/$(basename $NEXTCLOUD_URL) $MNT/Downloads
+        echo "Extracting $(basename $NEXTCLOUD_URL)"
+        ssh $RASPI_SSH "sudo tar xjf ~/Downloads/$(basename $NEXTCLOUD_URL) -C /var/www/html"
+        ssh $RASPI_SSH "cd /var/www/html && sudo chmod 750 nextcloud -R && sudo chown www-data:www-data nextcloud -R"
+
+        # MySQL configuration
+        echo -n "MySQL nextcloud password: "; read -r MYSQL_PASSWORD
+        cat <<EOF > $MNT_ROOT/tmp/mysqlconf
+CREATE USER 'nextcloud' IDENTIFIED BY '$MYSQL_PASSWORD';
+CREATE DATABASE nextcloud;
+GRANT ALL PRIVILEGES ON nextcloud.* TO 'nextcloud'@localhost IDENTIFIED BY '$MYSQL_PASSWORD';
+FLUSH PRIVILEGES;
+quit
+EOF
+        ssh $RASPI_SSH "sudo mysql < /tmp/mysqlconf"
+
+    fi
+
+    # Fix some Nextcloud warnings
+    ssh $RASPI_SSH "sudo sed -i 's/^memory_limit.*/memory_limit = 512M/' \$(php -i | grep php.ini | head -1 | sed 's#[^/]*##' | sed 's#/cli#/apache2#')/php.ini"
+
+    cat <<EOF
+Please add the following parameters to /var/www/html/nextcloud/config/config.php
+
+  array (
+    0 => 'pi',
+    1 => 'public host name',
+    2 => '192.168.0.0/16',
+  ),
+  'default_phone_region' => 'FR'
+  'memcache.local' => '\OC\Memcache\APCu'
+  'enable_previews' => true,
+  'enabledPreviewProviders' =>
+    array (
+      'OC\Preview\Movie',
+      'OC\Preview\PNG',
+      'OC\Preview\JPEG',
+      'OC\Preview\GIF',
+      'OC\Preview\BMP',
+      'OC\Preview\XBitmap',
+      'OC\Preview\MP3',
+      'OC\Preview\MP4',
+      'OC\Preview\TXT',
+      'OC\Preview\MarkDown',
+      'OC\Preview\PDF'
+    ),
+EOF
+    read -r
+
+    sshfs_umount
+}
+
+install_upnp()
+{
+    ssh $RASPI_SSH "sudo apt install minidlna"
+
+    sshfs_mount
+
+    mkdir -p $MNT/dlna
+
+#    cat <<EOF > $MNT_ROOT/etc/minidlna.conf
+#media_dir=A,/home/pi/Music
+#media_dir=P,/home/pi/Pictures
+#media_dir=V,/home/pi/Videos
+#friendly_name=Raspberry Pi
+#inotify=yes
+#EOF
+    ssh $RASPI_SSH "sudo sed -i 's#^media_dir=.*#media_dir=/home/pi/dlna#' /etc/minidlna.conf"
+    ssh $RASPI_SSH "sudo service minidlna stop"
+    ssh $RASPI_SSH "sudo service minidlna start"
+    ssh $RASPI_SSH "sudo update-rc.d minidlna defaults"
+
+    sshfs_umount
+}
+
+####################################################################
+# Main menu
+####################################################################
+
+menu()
+{
+    local choice=$(dialog --stdout --title "Remote Raspberry Pi Configuration" \
+        --menu "Configuring $RASPI_SSH" 0 0 0 \
+        Prepare "a RaspiOS image" \
+        Flash "image" \
+        Configure "with raspi-config on $RASPI_HOST" \
+        Keys "from host to $RASPI_HOST" \
+        Ssh "on $RASPI_HOST" \
+        Browse "$RASPI_HOST with mc and sshfs" \
+        Install "basic packets (zsh, git, tmux, ufw, fail2ban, dynamic DNS, SSL certificate, ...)" \
+        Radicale "CalDav/CardDav server" \
+        qBittorrent "small torrent downloader" \
+        Apache "Web server" \
+        Nextcloud "to replace evil Google services" \
+        UPnP "UPnP media server" \
+
+    )
+    case "$choice" in
+        Prepare)        prepare_image ;;
+        Flash)          flash_image ;;
+        Configure)      raspi_config ;;
+        Keys)           push_keys ;;
+        Ssh)            open_ssh ;;
+        Browse)         mc_sshfs ;;
+        Install)        install_base ;;
+        Radicale)       install_radicale ;;
+        qBittorrent)    install_qbittorrent ;;
+        Apache)         install_apache ;;
+        Nextcloud)      install_nextcloud ;;
+        UPnP)           install_upnp ;;
+        "")             exit ;;
+    esac
+
+    echo "Done. Press enter to return to the menu"
+    read -r
+}
+
+####################################################################
+# Command line arguments
+####################################################################
+
+if [ -n "$1" ]
+then
+    RASPI_HOST="$1"
+    RASPI_SSH="pi@$1"
+fi
+
+while true
+do
+    menu
+done
