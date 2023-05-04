@@ -1,7 +1,4 @@
-% Raspberry Pi 4 setup for a personal local cloud
-% Christophe Delord
-
-# Goal
+# Raspberry Pi 4 setup for a personal local cloud
 
 I don't like GAFAM's way of eating my personal data.
 So I decided to self-host my personal cloud to protect my privacy
