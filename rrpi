@@ -566,6 +566,28 @@ EOF_netmon
 }
 
 ####################################################################
+# CDSoft
+####################################################################
+
+install_cdsoft()
+{
+    local PACKETS="curl ninja-build"
+    # shellcheck disable=SC2029
+    ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
+    ssh $RASPI_SSH "curl https://cdelord.fr/hey/cdsoft-aarch64-linux-musl | sh"
+
+    sshfs_mount
+
+    sed -i '/luax env/d' $MNT/.bashrc
+    echo "eval \"\$(\\luax env)\"" >> $MNT/.bashrc
+
+    sed -i '/luax env/d' $MNT/.profile
+    echo "eval \"\$(\\luax env)\"" >> $MNT/.profile
+
+    sshfs_umount
+}
+
+####################################################################
 # Apache
 ####################################################################
 
@@ -1006,6 +1028,7 @@ menu()
         Ssh "on $RASPI_HOST" \
         Browse "$RASPI_HOST with mc and sshfs" \
         Install "basic packets (zsh, git, tmux, ufw, fail2ban, dynamic DNS, SSL certificate, ...)" \
+        CDSoft "LuaX softwares (LuaX, bang, ypp, panda, ...)" \
         Radicale "CalDav/CardDav server" \
         qBittorrent "small torrent downloader" \
         Apache "Web server" \
@@ -1021,6 +1044,7 @@ menu()
         Ssh)            open_ssh ;;
         Browse)         mc_sshfs ;;
         Install)        install_base ;;
+        CDSoft)         install_cdsoft ;;
         Radicale)       install_radicale ;;
         qBittorrent)    install_qbittorrent ;;
         Apache)         install_apache ;;

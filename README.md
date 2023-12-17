@@ -209,6 +209,30 @@ defined in `~/.myconf`.
    - netmon
    - status
 
+## Installation of CDSoft programs
+
+[hey](https://cdelord.fr/hey) is used to install some
+[LuaX](https://cdelord.fr/luax) based softwares.
+
+1. Run `rrpi mypi.local` and select `CDSoft`.
+
+   This will install some CDSoft programs precompiled for Raspberry Pi:
+
+   - [LuaX](https://cdelord.fr/luax)
+   - [bang](https://cdelord.fr/bang)
+   - [calculadoira](https://cdelord.fr/calculadoira)
+   - [lsvg](https://cdelord.fr/lsvg)
+   - [panda](https://cdelord.fr/panda)
+   - [tagref](https://github.com/CDSoft/tagref)
+   - [ypp](https://cdelord.fr/ypp)
+
+   and also some great tools:
+
+   - [pandoc](https://pandoc.org/)
+   - [typst](https://typst.app/)
+   - [PlantUML](https://plantuml.com/)
+   - [ditaa](https://github.com/stathissideris/ditaa)
+
 ## Apache web server
 
 The Apache web server can be used to host an HTTP server on the Raspberry Pi.
