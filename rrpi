@@ -7,6 +7,7 @@ RASPI_SSH=pi@$RASPI_HOST
 # Configuration (from ~/.myconf)
 ####################################################################
 
+# shellcheck disable=SC2046
 eval $(cat <<EOF | lua -
 local function dump(t, p)
     if type(t) == "table" then
@@ -36,15 +37,15 @@ IMG=$RASPIOS_DIR/$(basename $RASPIOS .xz)
 prepare_image()
 {
     mkdir -p $RASPIOS_DIR
-    if ! [ -f $IMG ]
+    if ! [ -f "$IMG" ]
     then
-        wget -c $RASPIOS -O $RASPIOS_DIR/$(basename $RASPIOS)
-        ( cd $RASPIOS_DIR && unxz $(basename $RASPIOS) )
+        wget -c $RASPIOS -O "$RASPIOS_DIR/$(basename $RASPIOS)"
+        ( cd $RASPIOS_DIR && unxz "$(basename $RASPIOS)" )
     fi
     local BOOT=$RASPIOS_DIR/boot
     mkdir -p $BOOT
     echo "Mounting $IMG to activate Wifi and SSH on first boot"
-    sudo mount -t vfat -o loop,offset=$((8192*512)) $IMG $BOOT
+    sudo mount -t vfat -o loop,offset=$((8192*512)) "$IMG" $BOOT
     sudo touch $BOOT/ssh
     echo -n "Wifi SSID    : "; read -r WIFI_SSID
     if [ -n "$WIFI_SSID" ]
@@ -82,10 +83,10 @@ flash_image()
         mv /tmp/parts2 /tmp/parts
     done
     rm /tmp/parts
-    echo -n "Ready to write $(basename $IMG) to /dev/$PART? "
+    echo -n "Ready to write $(basename "$IMG") to /dev/$PART? "
     read -r
     case "$REPLY" in
-        y|Y|o|O)    sudo dd if=$IMG of=/dev/$PART bs=8M status=progress ;;
+        y|Y|o|O)    sudo dd if="$IMG" of="/dev/$PART" bs=8M status=progress ;;
         *)          echo "aborted" ;;
     esac
     sync
@@ -154,6 +155,7 @@ mc_sshfs()
 install_base()
 {
     local PACKETS="git exa grc fzf rlwrap htop ripgrep fd-find tmux mc neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools"
+    # shellcheck disable=SC2029
     ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
 
     sshfs_mount
@@ -291,7 +293,7 @@ EOF
         sudo ufw status verbose numbered
     "
 
-    DYN_IP=$(curl -s http://ipinfo.io/ip)
+    #DYN_IP=$(curl -s http://ipinfo.io/ip)
 
     cat <<EOF > $MNT/jail.local
 [DEFAULT]
@@ -778,7 +780,7 @@ EOF
     then
         echo -n "Radicale user    : "; read -r RADICALE_USER
         echo -n "Radicale password: "; read -r RADICALE_PASSWORD
-        htpasswd -mbc $MNT/.config/radicale/users $RADICALE_USER $RADICALE_PASSWORD
+        htpasswd -mbc $MNT/.config/radicale/users "$RADICALE_USER" "$RADICALE_PASSWORD"
     fi
     mkdir -p $MNT/.config/systemd/user/
     cat <<\EOF > $MNT/.config/systemd/user/radicale.service
@@ -908,12 +910,13 @@ install_nextcloud()
     then
 
         # Download NextCloud
-        wget -c $NEXTCLOUD_URL -O $RASPIOS_DIR/$(basename $NEXTCLOUD_URL)
+        wget -c $NEXTCLOUD_URL -O "$RASPIOS_DIR/$(basename $NEXTCLOUD_URL)"
 
         #echo "Copying $(basename $NEXTCLOUD_URL)"
         mkdir -p $MNT/Downloads
-        cp -uv $RASPIOS_DIR/$(basename $NEXTCLOUD_URL) $MNT/Downloads
+        cp -uv "$RASPIOS_DIR/$(basename $NEXTCLOUD_URL)" $MNT/Downloads
         echo "Extracting $(basename $NEXTCLOUD_URL)"
+        # shellcheck disable=SC2029
         ssh $RASPI_SSH "sudo tar xjf ~/Downloads/$(basename $NEXTCLOUD_URL) -C /var/www/html"
         ssh $RASPI_SSH "cd /var/www/html && sudo chmod 750 nextcloud -R && sudo chown www-data:www-data nextcloud -R"
 
@@ -993,7 +996,8 @@ install_upnp()
 
 menu()
 {
-    local choice=$(dialog --stdout --title "Remote Raspberry Pi Configuration" \
+    local choice
+    choice=$(dialog --stdout --title "Remote Raspberry Pi Configuration" \
         --menu "Configuring $RASPI_SSH" 0 0 0 \
         Prepare "a RaspiOS image" \
         Flash "image" \
