@@ -306,7 +306,8 @@ bantime = 4w
 maxretry = 3
 
 [sshd]
-enabled  = true
+backend = systemd
+enabled = true
 mode = agressive
 bantime = 4w
 
