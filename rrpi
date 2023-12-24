@@ -462,7 +462,7 @@ EOF_status
     ssh $RASPI_SSH "/home/pi/bin/status | pandoc --self-contained --to html5 >/var/www/html/status.html"
 
     cat <<\EOF_netmon > $MNT/bin/netmon
-#/bin/bash
+#!/bin/bash
 
 CSV=/var/www/html/netmon.csv
 HTML=/var/www/html/netmon.html
@@ -564,6 +564,20 @@ EOF_netmon
     then
         ssh $RASPI_SSH "echo '*/5 * * * * pi nohup bash /home/pi/bin/netmon &' | sudo tee /etc/cron.d/netmon"
     fi
+
+    # periodic backup with timeshift
+    cat <<EOF_timeshift > $MNT/bin/timeshift-check
+#!/bin/bash
+
+sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --on
+sleep 5
+trap "sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --off" EXIT
+
+sudo timeshift --check --scripted
+sudo rm -vf /etc/cron.d/timeshift-hourly
+EOF_timeshift
+    chmod +x $MNT/bin/timeshift-check
+    ssh $RASPI_SSH "echo '0 2 * * * pi /home/pi/bin/timeshift-check' | sudo tee /etc/cron.d/timeshift-check"
 
     sshfs_umount
 }
@@ -852,11 +866,13 @@ install_nextcloud()
     sshfs_mount
 
     cat <<EOF > $MNT/bin/nextcloud-off
-    sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --on
+#!/bin/bash
+sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --on
 EOF
 
     cat <<EOF > $MNT/bin/nextcloud-on
-    sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --off
+#!/bin/bash
+sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --off
 EOF
 
     chmod +x $MNT/bin/nextcloud-{on,off}
