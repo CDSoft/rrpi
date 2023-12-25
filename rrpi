@@ -624,7 +624,14 @@ install_apache()
 
     # https://raspberry-pi.fr/activer-fichiers-htaccess-raspbian/
     ssh $RASPI_SSH "sudo sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf"
-    ssh $RASPI_SSH "sudo /etc/init.d/apache2 restart"
+
+    # Unlimited uploads with Nextcloud
+    cat <<\EOF > $MNT/999-nextcloud_large_files.conf
+LimitRequestBody 17179869184
+EOF
+    ssh $RASPI_SSH "sudo mv 999-nextcloud_large_files.conf /etc/apache2/sites-enabled"
+
+    ssh $RASPI_SSH "sudo systemctl restart apache2"
 
     ssh $RASPI_SSH "[ -f /var/www/html/index.html ] && sudo mv /var/www/html/index.html /var/www/html/noindex.html"
     cat <<\EOF > $MNT/.htaccess
