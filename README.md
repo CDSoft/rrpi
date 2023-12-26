@@ -1,4 +1,4 @@
-# Raspberry Pi 4 setup for a personal local cloud
+# Raspberry Pi 4/5 setup for a personal local cloud
 
 I don't like GAFAM's way of eating my personal data.
 So I decided to self-host my personal cloud to protect my privacy
@@ -6,7 +6,7 @@ and have full powers on my data instead of Google.
 
 This page describes a basic Raspberry Pi installation:
 
-- Hardware setup: personal data center based on a Raspberry Pi 4 and an SSD
+- Hardware setup: personal data center based on a Raspberry Pi 4 or 5 and an SSD
 - Software setup: configurable and semi-automated setup script from a regular
   Linux PC
     - preparation and installation of a RaspiOS image
@@ -29,7 +29,7 @@ We are going to install it on a Rapsberry Pi connected to the local network.
 
 For this you will need:
 
-- a Raspberry Pi (ideally a Raspberry Pi 4 with at least 4 Gb or RAM)
+- a Raspberry Pi (ideally a Raspberry Pi 4 or 5 with at least 4 Gb or RAM)
 - an external USB HD or SSD to avoid SD card issues
 - a Raspberry Pi power supply
 - an Ethernet cable if you don't want to use the Raspberry Pi WiFi connection.
@@ -178,7 +178,7 @@ This behaviour can be changed in `rrpi`.
 
 ### Fail2ban
 
-[Fail2ban](https://fail2ban.org) is used to ban IP that try to hack the
+[Fail2ban](https://fail2ban.org) is used to ban IPs that try to hack the
 Raspberry Pi. Its configuration is hard-coded in `rrpi`. Banned IPs are
 reported to [AbuseIPDB](https://www.abuseipdb.com/). AbuseIPDB keys shall be
 defined in `~/.myconf`.
