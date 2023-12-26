@@ -869,7 +869,7 @@ install_nextcloud()
     ssh $RASPI_SSH "sudo apt install apache2 mariadb-server libapache2-mod-php"
     ssh $RASPI_SSH "sudo apt install php-gd php-json php-mysql php-curl php-mbstring php-intl php-imagick php-xml php-zip"
     ssh $RASPI_SSH "sudo apt install certbot python3-certbot-apache"
-    ssh $RASPI_SSH "sudo apt install php-apcu php-gmp php-bcmath ffmpeg"
+    ssh $RASPI_SSH "sudo apt install php-apcu php-bz2 php-gmp php-bcmath ffmpeg"
 
     sshfs_mount
 
@@ -911,6 +911,9 @@ EOF
         ssh $RASPI_SSH "sudo mysql < /tmp/mysqlconf"
 
     fi
+
+    # https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/background_jobs_configuration.html?highlight=cron#cron
+    ssh $RASPI_SSH "echo '*/5 * * * * www-data php /var/www/html/nextcloud/cron.php' | sudo tee /etc/cron.d/nextcloud-cron"
 
     # Fix some Nextcloud warnings
     ssh $RASPI_SSH "sudo sed -i 's/^memory_limit.*/memory_limit = 512M/' \$(php -i | grep php.ini | head -1 | sed 's#[^/]*##' | sed 's#/cli#/apache2#')/php.ini"
