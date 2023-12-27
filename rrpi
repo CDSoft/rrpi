@@ -317,6 +317,7 @@ action = %(action_)s
 
 EOF
     ssh $RASPI_SSH "sudo mv -f jail.local /etc/fail2ban/jail.d/jail.local; sudo chown root:root /etc/fail2ban/jail.d/jail.local"
+    ssh $RASPI_SSH "sudo sed -i 's/^#allowipv6 = auto/allowipv6 = auto/' /etc/fail2ban/fail2ban.conf"
     ssh $RASPI_SSH "sudo service fail2ban restart"
 
     # Dynamic DNS with Gandi
@@ -354,6 +355,20 @@ then
     DNS_IP=$(cat $CACHE)
     echo "DNS IP    : $DNS_IP (from cache)"
 fi
+
+# If the IP is new, add it to the fail2ban whitelist
+if [ -z "$DNS_IP" ]
+then
+
+    JAILS=$(python -c "print(' '.join(k for d in $(sudo fail2ban-client banned) for k in d))")
+    for jail in $JAILS
+    do
+        sudo fail2ban-client set $jail addignoreip "$DYN_IP"
+    done
+    sudo fail2ban-client unban "$DYN_IP"
+    sudo fail2ban-client reload
+
+fi > /dev/null
 
 # Get the DNS IP from the DNS record if the cache is empty
 if [ -z "$DNS_IP" ]
@@ -425,6 +440,34 @@ EOF
         sed -i "s/CERTBOT_RENEW/$CERTBOT_RENEW/" $MNT/bin/gdns
         chmod +x $MNT/bin/gdns
 
+        cat <<\EOF > $MNT/bin/unban.py
+#!/usr/bin/env python
+
+import os
+
+banned = eval(os.popen("sudo fail2ban-client banned").read())
+
+if not isinstance(banned, list):
+    os.exit(1)
+
+server_ip = open("/tmp/gdns.cache", "rt").read().strip()
+print("server IP:", server_ip)
+
+reload = False
+
+for d in banned:
+    for jail, ips in d.items():
+        for ip in ips:
+            if ip == server_ip:
+                print("unban", ip, "from", jail)
+                os.system("sudo fail2ban-client set "+jail+" addignoreip "+ip)
+                reload = True
+if reload:
+    os.system("sudo fail2ban-client unban "+server_ip)
+    os.system("sudo fail2ban-client reload")
+EOF
+        chmod +x $MNT/bin/unban.py
+
         # The DNS status is updated by status
         #ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/gdns >/tmp/gdns.log 2>&1' | sudo tee /etc/cron.d/gdns"
     fi
@@ -452,9 +495,11 @@ $(LANG=C df -h /)
 
 ~~~
 $(/home/pi/bin/gdns || echo "DNS status N/A")
+$(~/bin/unban.py >/dev/null)
 ~~~
 
 EOF
+
 EOF_status
     chmod +x $MNT/bin/status
     ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/status | pandoc --self-contained --to html5 >/var/www/html/status.html' | sudo tee /etc/cron.d/status"
