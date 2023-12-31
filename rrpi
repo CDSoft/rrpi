@@ -630,6 +630,13 @@ EOF_timeshift
     chmod +x $MNT/bin/timeshift-check
     ssh $RASPI_SSH "echo '0 2 * * * pi /home/pi/bin/timeshift-check' | sudo tee /etc/cron.d/timeshift-check"
 
+    ssh $RASPI_SSH "sudo sed -i \
+        -e 's#\"schedule_monthly\" : \"false\"#\"schedule_monthly\" : \"true\"#' \
+        -e 's#\"schedule_weekly\" : \"false\"#\"schedule_weekly\" : \"true\"#' \
+        -e 's#\"schedule_daily\" : \"false\"#\"schedule_daily\" : \"true\"#' \
+        /etc/timeshift/timeshift.json \
+    "
+
     sshfs_umount
 }
 
