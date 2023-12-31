@@ -183,6 +183,28 @@ Raspberry Pi. Its configuration is hard-coded in `rrpi`. Banned IPs are
 reported to [AbuseIPDB](https://www.abuseipdb.com/). AbuseIPDB keys shall be
 defined in `~/.myconf`.
 
+### CDSoft programs
+
+[hey](https://cdelord.fr/hey) is used to install some
+[LuaX](https://cdelord.fr/luax) based softwares.
+
+This will install some CDSoft programs precompiled for Raspberry Pi:
+
+   - [LuaX](https://cdelord.fr/luax)
+   - [bang](https://cdelord.fr/bang)
+   - [calculadoira](https://cdelord.fr/calculadoira)
+   - [lsvg](https://cdelord.fr/lsvg)
+   - [panda](https://cdelord.fr/panda)
+   - [tagref](https://github.com/CDSoft/tagref)
+   - [ypp](https://cdelord.fr/ypp)
+
+and also some great tools:
+
+   - [pandoc](https://pandoc.org/)
+   - [typst](https://typst.app/)
+   - [PlantUML](https://plantuml.com/)
+   - [ditaa](https://github.com/stathissideris/ditaa)
+
 ### Configuration
 
 1. Run `rrpi mypi.local` and select `Install`.
@@ -208,30 +230,6 @@ defined in `~/.myconf`.
    - gdns
    - netmon
    - status
-
-## Installation of CDSoft programs
-
-[hey](https://cdelord.fr/hey) is used to install some
-[LuaX](https://cdelord.fr/luax) based softwares.
-
-1. Run `rrpi mypi.local` and select `CDSoft`.
-
-   This will install some CDSoft programs precompiled for Raspberry Pi:
-
-   - [LuaX](https://cdelord.fr/luax)
-   - [bang](https://cdelord.fr/bang)
-   - [calculadoira](https://cdelord.fr/calculadoira)
-   - [lsvg](https://cdelord.fr/lsvg)
-   - [panda](https://cdelord.fr/panda)
-   - [tagref](https://github.com/CDSoft/tagref)
-   - [ypp](https://cdelord.fr/ypp)
-
-   and also some great tools:
-
-   - [pandoc](https://pandoc.org/)
-   - [typst](https://typst.app/)
-   - [PlantUML](https://plantuml.com/)
-   - [ditaa](https://github.com/stathissideris/ditaa)
 
 ## Apache web server
 

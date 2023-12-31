@@ -157,11 +157,19 @@ mc_sshfs()
 
 install_base()
 {
-    local PACKETS="git exa grc fzf rlwrap htop ripgrep fd-find tmux mc vifm neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools"
+    local PACKETS="git exa grc fzf rlwrap htop ripgrep fd-find tmux mc vifm neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools curl ninja-build"
     # shellcheck disable=SC2029
     ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
 
+    ssh $RASPI_SSH "mkdir -p ~/.local; curl https://cdelord.fr/hey/cdsoft-aarch64-linux-musl | sh"
+
     sshfs_mount
+
+    sed -i '/luax env/d' $MNT/.bashrc
+    echo "eval \"\$(\\luax env)\"" >> $MNT/.bashrc
+
+    sed -i '/luax env/d' $MNT/.profile
+    echo "eval \"\$(\\luax env)\"" >> $MNT/.profile
 
     cat <<\EOF > $MNT/.bash_aliases
 export PATH=~/.local/bin:~/bin:$PATH
@@ -502,10 +510,7 @@ EOF
 
 EOF_status
     chmod +x $MNT/bin/status
-    ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/status | pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html' | sudo tee /etc/cron.d/status"
-    ssh $RASPI_SSH "sudo touch /var/www/html/status.html"
-    ssh $RASPI_SSH "sudo chown pi:pi /var/www/html/status.html"
-    ssh $RASPI_SSH "/home/pi/bin/status | pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html"
+    ssh $RASPI_SSH "echo '*/5 * * * * root /home/pi/bin/status | /home/pi/.local/bin/pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html' | sudo tee /etc/cron.d/status"
 
     cat <<\EOF_netmon > $MNT/bin/netmon
 #!/bin/bash
@@ -624,28 +629,6 @@ sudo rm -vf /etc/cron.d/timeshift-hourly
 EOF_timeshift
     chmod +x $MNT/bin/timeshift-check
     ssh $RASPI_SSH "echo '0 2 * * * pi /home/pi/bin/timeshift-check' | sudo tee /etc/cron.d/timeshift-check"
-
-    sshfs_umount
-}
-
-####################################################################
-# CDSoft
-####################################################################
-
-install_cdsoft()
-{
-    local PACKETS="curl ninja-build"
-    # shellcheck disable=SC2029
-    ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
-    ssh $RASPI_SSH "mkdir -p ~/.local; curl https://cdelord.fr/hey/cdsoft-aarch64-linux-musl | sh"
-
-    sshfs_mount
-
-    sed -i '/luax env/d' $MNT/.bashrc
-    echo "eval \"\$(\\luax env)\"" >> $MNT/.bashrc
-
-    sed -i '/luax env/d' $MNT/.profile
-    echo "eval \"\$(\\luax env)\"" >> $MNT/.profile
 
     sshfs_umount
 }
@@ -1033,7 +1016,6 @@ menu()
         Ssh "on $RASPI_HOST" \
         Browse "$RASPI_HOST with mc and sshfs" \
         Install "basic packets (zsh, git, tmux, ufw, fail2ban, dynamic DNS, SSL certificate, ...)" \
-        CDSoft "LuaX softwares (LuaX, bang, ypp, panda, ...)" \
         Radicale "CalDav/CardDav server" \
         qBittorrent "small torrent downloader" \
         Apache "Web server" \
@@ -1049,7 +1031,6 @@ menu()
         Ssh)            open_ssh ;;
         Browse)         mc_sshfs ;;
         Install)        install_base ;;
-        CDSoft)         install_cdsoft ;;
         Radicale)       install_radicale ;;
         qBittorrent)    install_qbittorrent ;;
         Apache)         install_apache ;;
