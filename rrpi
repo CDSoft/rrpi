@@ -486,7 +486,7 @@ date: "$(date)"
 ~~~
 $(neofetch --stdout)
 
-$(sensors | awk '$1~/^temp/ {print}')
+$(sensors | awk '$1~/^(temp|fan)/ {print}')
 
 $(LANG=C df -h /)
 ~~~
