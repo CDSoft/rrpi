@@ -502,10 +502,10 @@ EOF
 
 EOF_status
     chmod +x $MNT/bin/status
-    ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/status | pandoc --self-contained --to html5 >/var/www/html/status.html' | sudo tee /etc/cron.d/status"
+    ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/status | pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html' | sudo tee /etc/cron.d/status"
     ssh $RASPI_SSH "sudo touch /var/www/html/status.html"
     ssh $RASPI_SSH "sudo chown pi:pi /var/www/html/status.html"
-    ssh $RASPI_SSH "/home/pi/bin/status | pandoc --self-contained --to html5 >/var/www/html/status.html"
+    ssh $RASPI_SSH "/home/pi/bin/status | pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html"
 
     cat <<\EOF_netmon > $MNT/bin/netmon
 #!/bin/bash
@@ -569,13 +569,13 @@ publish()
 {
     if ! [ -f $HTML ] || [ $CSV -nt $HTML ]
     then
-        cat <<EOF | pandoc --self-contained --to html5 | sudo tee $HTML >/dev/null
+        cat <<EOF | pandoc --embed-resources --standalone --to html5 | sudo tee $HTML >/dev/null
 ---
 title: "Network Monitor"
 date: "$(date)"
 ---
 
-$( (head -2 $CSV; sed '1,2d' $CSV | tac) | cut -d"|" -f1,2,4,5,6,7,8)
+$( (head -2 $CSV; sed '1,2d' $CSV | tac) | cut -d"|" -f1,2,4,5,6,7,8 )
 
 EOF
     fi
