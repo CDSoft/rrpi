@@ -7,21 +7,7 @@ RASPI_SSH=pi@$RASPI_HOST
 # Configuration (from ~/.myconf)
 ####################################################################
 
-# shellcheck disable=SC2046
-eval $(cat <<EOF | lua -
-local function dump(t, p)
-    if type(t) == "table" then
-        for k, v in pairs(t) do dump(v, (p and p.."_" or "")..k) end
-    else
-        local s = tostring(t)
-        if not s:match "\n" then print(p:upper().."='"..s.."'") end
-    end
-end
-local conf = {}
-assert(loadfile(os.getenv"HOME".."/.myconf", "t", conf))()
-dump(conf)
-EOF
-)
+eval "$(luax env ~/.myconf)"
 
 ####################################################################
 # Download image and activate SSH at first boot
