@@ -350,20 +350,6 @@ then
     echo "DNS IP    : $DNS_IP (from cache)"
 fi
 
-# If the IP is new, add it to the fail2ban whitelist
-if [ -z "$DNS_IP" ]
-then
-
-    JAILS=$(python -c "print(' '.join(k for d in $(sudo fail2ban-client banned) for k in d))")
-    for jail in $JAILS
-    do
-        sudo fail2ban-client set $jail addignoreip "$DYN_IP"
-    done
-    sudo fail2ban-client unban "$DYN_IP"
-    sudo fail2ban-client reload
-
-fi > /dev/null
-
 # Get the DNS IP from the DNS record if the cache is empty
 if [ -z "$DNS_IP" ]
 then
@@ -426,6 +412,8 @@ then
         sudo certbot renew
     fi
 fi
+
+/home/pi/bin/unban.py
 EOF
         sed -i "s/GANDI_API_KEY/$GANDI_API_KEY/" $MNT/bin/gdns
         sed -i "s/GANDI_DOMAIN/$GANDI_DOMAIN/" $MNT/bin/gdns
@@ -462,8 +450,7 @@ if reload:
 EOF
         chmod +x $MNT/bin/unban.py
 
-        # The DNS status is updated by status
-        #ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/gdns >/tmp/gdns.log 2>&1' | sudo tee /etc/cron.d/gdns"
+        ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/gdns >/dev/null 2>&1' | sudo tee /etc/cron.d/gdns"
     fi
 
     mkdir -p $MNT/bin
@@ -489,14 +476,13 @@ $(LANG=C df -h /)
 
 ~~~
 $(/home/pi/bin/gdns || echo "DNS status N/A")
-$(~/bin/unban.py >/dev/null)
 ~~~
 
 EOF
 
 EOF_status
     chmod +x $MNT/bin/status
-    ssh $RASPI_SSH "echo '*/5 * * * * root /home/pi/bin/status | /home/pi/.local/bin/pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html' | sudo tee /etc/cron.d/status"
+    #ssh $RASPI_SSH "echo '*/5 * * * * root /home/pi/bin/status | /home/pi/.local/bin/pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html' | sudo tee /etc/cron.d/status"
 
     cat <<\EOF_netmon > $MNT/bin/netmon
 #!/bin/bash
@@ -759,6 +745,39 @@ action = %(action_)s
 EOF
     ssh $RASPI_SSH "sudo mv -f apache.local /etc/fail2ban/jail.d/apache.local; sudo chown root:root /etc/fail2ban/jail.d/apache.local"
     ssh $RASPI_SSH "sudo service fail2ban restart"
+
+    cat <<\EOF | sed "s/SERVER_NAME/$GANDI_SUBDOMAIN.$GANDI_DOMAIN/" > $MNT/status.php
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+</head>
+<body>
+
+<h1>Pi status</h1>
+<p><?php date_default_timezone_set("Europe/Paris"); echo date("r"); ?></p>
+
+<h2>Server</h2>
+
+<pre>
+<?php echo shell_exec("neofetch --stdout --disable Packages Shell"); ?>
+
+<?php echo shell_exec("sensors | awk '$1~/^(temp|fan)/ {print}'"); ?>
+
+<?php echo shell_exec("LANG=C df -h /"); ?>
+</pre>
+
+<h2>DNS</h2>
+
+<pre>
+Dynamic IP: <?php echo shell_exec("curl -s http://ipinfo.io/ip"); ?>
+
+DNS IP    : <?php echo gethostbyname("SERVER_NAME"); ?>
+</pre>
+
+</body>
+</html>
+EOF
+    ssh $RASPI_SSH "sudo mv -f status.php /var/www/html/status.php; sudo chown root:root /var/www/html/status.php"
 
     sshfs_umount
 }
