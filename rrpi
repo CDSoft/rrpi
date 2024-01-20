@@ -546,7 +546,7 @@ publish()
 {
     if ! [ -f $HTML ] || [ $CSV -nt $HTML ]
     then
-        cat <<EOF | pandoc --embed-resources --standalone --to html5 | sudo tee $HTML >/dev/null
+        cat <<EOF | /home/pi/.local/bin/pandoc --embed-resources --standalone --to html5 | sudo tee $HTML >/dev/null
 ---
 title: "Network Monitor"
 date: "$(date)"
