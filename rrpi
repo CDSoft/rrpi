@@ -296,14 +296,14 @@ EOF
 [DEFAULT]
 ignoreip = 127.0.0.1/8 ::1 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12
 findtime = 15m
-bantime = 4w
+bantime = 12w
 maxretry = 3
 
 [sshd]
 backend = systemd
 enabled = true
 mode = agressive
-bantime = 4w
+bantime = 12w
 
 # Ban IP and report to AbuseIPDB for SSH Brute-Forcing
 action = %(action_)s
