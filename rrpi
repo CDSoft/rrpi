@@ -147,7 +147,7 @@ install_base()
     # shellcheck disable=SC2029
     ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
 
-    ssh $RASPI_SSH "mkdir -p ~/.local; curl https://cdelord.fr/hey/cdsoft-linux-aarch64-musl | sh"
+    ssh $RASPI_SSH "mkdir -p ~/.local; curl https://cdelord.fr/pub/luax-full.sh | sh"
 
     sshfs_mount
 
