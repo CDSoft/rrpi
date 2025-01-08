@@ -482,7 +482,6 @@ EOF
 
 EOF_status
     chmod +x $MNT/bin/status
-    #ssh $RASPI_SSH "echo '*/5 * * * * root /home/pi/bin/status | /home/pi/.local/bin/pandoc --embed-resources --standalone --to html5 -o /var/www/html/status.html' | sudo tee /etc/cron.d/status"
 
     cat <<\EOF_netmon > $MNT/bin/netmon
 #!/bin/bash
@@ -546,7 +545,7 @@ publish()
 {
     if ! [ -f $HTML ] || [ $CSV -nt $HTML ]
     then
-        cat <<EOF | /home/pi/.local/bin/pandoc --embed-resources --standalone --to html5 | sudo tee $HTML >/dev/null
+        cat <<EOF | pandoc --self-contained --standalone --to html5 | sudo tee $HTML >/dev/null
 ---
 title: "Network Monitor"
 date: "$(date)"
