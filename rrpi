@@ -499,6 +499,7 @@ NEW=false
 
 check()
 {
+    [ -z "$1" ] && return
     ( timeout 2 ping -4 -c1 $1 || timeout 2 ping -4 -c1 $1 || timeout 2 ping -4 -c1 $1 ) >/dev/null 2>&1 \
         && echo ok || echo FAIL
 }
