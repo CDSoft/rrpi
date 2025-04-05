@@ -195,7 +195,7 @@ This will install some CDSoft programs precompiled for Raspberry Pi:
    - [calculadoira](https://cdelord.fr/calculadoira)
    - [lsvg](https://cdelord.fr/lsvg)
    - [panda](https://cdelord.fr/panda)
-   - [tagref](https://github.com/CDSoft/tagref)
+   - [tagref](https://codeberg.org/cdsoft/tagref)
    - [ypp](https://cdelord.fr/ypp)
 
 and also some great tools:
@@ -275,11 +275,6 @@ The Debian packet `minidlna` can be used to store and shared media files
 2. Run `qbittorrent-nox` on the Raspberry Pi to start the qBittorrent server
    (`Ctrl-C` to stop it).
 
-# WORK IN PROGRESS...
-
-This script is constantly updated and the documentation may be outdated.
-The best is always to read the sources and change them to fit your requirements.
-
 # Git server
 
 GitHub and GitLab are great but if you need private repositories,
@@ -344,3 +339,7 @@ The procedure described here is a summary of
     git clone pi@git.example.com:/home/pi/git/hello
     ```
 
+# WORK IN PROGRESS...
+
+This script is constantly updated and the documentation may be outdated.
+The best is always to read the sources and change them to fit your requirements.

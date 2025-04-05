@@ -147,7 +147,7 @@ install_base()
     # shellcheck disable=SC2029
     ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
 
-    ssh $RASPI_SSH "mkdir -p ~/src; cd ~/src; [ -d luax ] || git clone https://github.com/CDSoft/luax; cd luax && git checkout dev && git pull && ./bootstrap.sh && ninja install"
+    ssh $RASPI_SSH "mkdir -p ~/src; cd ~/src; [ -d luax ] || git clone https://codeberg.org/cdsoft/luax; cd luax && git checkout dev && git pull && ./bootstrap.sh && ninja install"
 
     sshfs_mount
 
