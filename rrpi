@@ -143,7 +143,7 @@ mc_sshfs()
 
 install_base()
 {
-    local PACKETS="git exa grc fzf rlwrap htop ripgrep fd-find tmux mc vifm neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools curl ninja-build ddclient"
+    local PACKETS="git git-lfs exa grc fzf rlwrap htop ripgrep fd-find tmux mc vifm neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools curl ninja-build ddclient"
     # shellcheck disable=SC2029
     ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
 
@@ -638,6 +638,26 @@ EOF_timeshift
         -e 's#\"schedule_daily\" : \"false\"#\"schedule_daily\" : \"true\"#' \
         /etc/timeshift/timeshift.json \
     "
+
+    # Forgejo (https://forgejo.org/docs/latest/admin/installation-binary/)
+    FORGEJO_LATEST=$(curl -Ls -o /dev/null -w "%{url_effective}" https://codeberg.org/forgejo/forgejo/releases/latest)
+    FORGEJO_TAG=$(basename $FORGEJO_LATEST)
+    FORGEJO_VERSION=${FORGEJO_TAG#v}
+    FORGEJO_URL=https://codeberg.org/forgejo/forgejo/releases/download/$FORGEJO_TAG/forgejo-$FORGEJO_VERSION-linux-arm64.xz
+    curl $FORGEJO_URL -o $MNT_ROOT/tmp/$(basename $FORGEJO_URL)
+    xz -d -c $MNT_ROOT/tmp/$(basename $FORGEJO_URL) > $MNT_ROOT/tmp/forgejo
+    ssh $RASPI_SSH "sudo cp /tmp/forgejo /usr/local/bin/forgejo"
+    ssh $RASPI_SSH "sudo chmod 755 /usr/local/bin/forgejo"
+    ssh $RASPI_SSH "sudo apt install git git-lfs"
+    ssh $RASPI_SSH "sudo adduser --system --shell /bin/bash --gecos 'Git Version Control' --group --disabled-password --home /home/git git"
+    ssh $RASPI_SSH "sudo mkdir -p /var/lib/forgejo"
+    ssh $RASPI_SSH "sudo chown git:git /var/lib/forgejo && sudo chmod 750 /var/lib/forgejo"
+    ssh $RASPI_SSH "sudo mkdir -p /etc/forgejo"
+    ssh $RASPI_SSH "sudo chown root:git /etc/forgejo && sudo chmod 770 /etc/forgejo"
+    curl https://codeberg.org/forgejo/forgejo/raw/branch/forgejo/contrib/systemd/forgejo.service -o $MNT_ROOT/tmp/forgejo.service
+    ssh $RASPI_SSH "sudo cp /tmp/forgejo.service /etc/systemd/system/forgejo.service"
+    ssh $RASPI_SSH "sudo systemctl enable forgejo.service"
+    ssh $RASPI_SSH "sudo systemctl start forgejo.service"
 
     sshfs_umount
 }
