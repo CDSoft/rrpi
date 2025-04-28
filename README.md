@@ -87,6 +87,7 @@ We will start by configuring the Raspberry Pi with `raspi-config`.
 
 1. Run `rrpi` and select `Configure`
 2. In the Raspberry Pi Configuration Tool some parameters can be changed:
+
     a. System Options / Password: change the `pi` user password and choose a strong password.
     b. System Options / Hostname: choose a different hostname (this hostname will be a parameter of `rrpi` in the next steps, e.g. `mypi`).
     c. Interface Options / SSH: Enable SSH.
@@ -267,7 +268,7 @@ You can install Radicale if you don't need Nextcloud.
 [Nextcloud](https://nextcloud.com/) is a complete alternative to Google
 (calendars, contacts, drive, ...) and Dropbox (file synchronization). It works
 pretty well and integrates perfectly with Thunderbird, Android, ... I have a
-500 Gb cloud for just the price of a 500 Gb SSD and my data remain mine.
+2 Tb cloud for just the price of a 2 Tb SSD and my data remains mine.
 
 1. Run `rrpi mypi.local` and select `Nextcloud`.
 2. Enter the MySQL password.
