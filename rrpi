@@ -84,7 +84,7 @@ flash_image()
 
 raspi_config()
 {
-    ssh -t $RASPI_SSH "sudo raspi-config"
+    ssh -t "$RASPI_SSH" "sudo raspi-config"
 }
 
 ####################################################################
@@ -93,7 +93,7 @@ raspi_config()
 
 open_ssh()
 {
-    ssh -t $RASPI_SSH
+    ssh -t "$RASPI_SSH"
 }
 
 
@@ -104,7 +104,7 @@ open_ssh()
 push_keys()
 {
     [ -e ~/.ssh/id_rsa.pub ] || ssh-keygen
-    ssh-copy-id $RASPI_SSH
+    ssh-copy-id "$RASPI_SSH"
     echo -n "Press any key"; read -r
 }
 
@@ -116,9 +116,9 @@ sshfs_mount()
 {
     MNT=$RASPIOS_DIR/mnt-$RASPI_HOST
     MNT_ROOT=$RASPIOS_DIR/mnt-$RASPI_HOST-root
-    mkdir -p $MNT $MNT_ROOT
-    sshfs $RASPI_SSH:/home/pi $MNT
-    sshfs $RASPI_SSH:/ $MNT_ROOT
+    mkdir -p "$MNT" "$MNT_ROOT"
+    sshfs "$RASPI_SSH":/home/pi "$MNT"
+    sshfs "$RASPI_SSH":/ "$MNT_ROOT"
 }
 
 sshfs_umount()
@@ -126,14 +126,14 @@ sshfs_umount()
     echo "Wait for 5 seconds before unmounting the remote file system"
     sync
     sleep 5
-    umount $MNT
-    umount $MNT_ROOT
+    umount "$MNT"
+    umount "$MNT_ROOT"
 }
 
 mc_sshfs()
 {
     sshfs_mount
-    mc . $MNT
+    mc . "$MNT"
     sshfs_umount
 }
 
@@ -145,19 +145,19 @@ install_base()
 {
     local PACKETS="git git-lfs exa grc fzf rlwrap htop ripgrep fd-find tmux mc vifm neovim vim-nox ufw fail2ban jq pandoc neofetch lm-sensors dialog timeshift libreadline-dev sshfs make gcc musl-tools curl ninja-build ddclient"
     # shellcheck disable=SC2029
-    ssh $RASPI_SSH "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
+    ssh "$RASPI_SSH" "sudo apt update; sudo apt install $PACKETS; sudo apt upgrade"
 
-    ssh $RASPI_SSH "mkdir -p ~/src; cd ~/src; [ -d luax ] || git clone https://codeberg.org/cdsoft/luax; cd luax && git checkout dev && git pull && ./bootstrap.sh && ninja install"
+    ssh "$RASPI_SSH" "mkdir -p ~/src; cd ~/src; [ -d luax ] || git clone https://codeberg.org/cdsoft/luax; cd luax && git checkout dev && git pull && ./bootstrap.sh && ninja install"
 
     sshfs_mount
 
-    sed -i '/luax env/d' $MNT/.bashrc
-    echo "eval \"\$(\\luax env)\"" >> $MNT/.bashrc
+    sed -i '/luax env/d' "$MNT"/.bashrc
+    echo "eval \"\$(\\luax env)\"" >> "$MNT"/.bashrc
 
-    sed -i '/luax env/d' $MNT/.profile
-    echo "eval \"\$(\\luax env)\"" >> $MNT/.profile
+    sed -i '/luax env/d' "$MNT"/.profile
+    echo "eval \"\$(\\luax env)\"" >> "$MNT"/.profile
 
-    cat <<\EOF > $MNT/.bash_aliases
+    cat <<\EOF > "$MNT"/.bash_aliases
 export PATH=~/.local/bin:~/bin:$PATH
 
 export EDITOR=nvim
@@ -187,7 +187,7 @@ function gd()
 }
 EOF
 
-    cat <<EOF > $MNT/.tmux.conf
+    cat <<EOF > "$MNT"/.tmux.conf
 # Use C-a instead of C-b
 #set -g prefix C-a
 #unbind-key C-b
@@ -279,7 +279,7 @@ set -g status-right-length 60
 set -g status-right '%d/%m/%Y | %H:%M '
 EOF
 
-    ssh $RASPI_SSH "
+    ssh "$RASPI_SSH" "
         sudo ufw reset
         sudo ufw allow from 10.0.0.0/8
         sudo ufw allow from 172.16.0.0/12
@@ -292,7 +292,7 @@ EOF
 
     #DYN_IP=$(curl -s http://ipinfo.io/ip)
 
-    cat <<EOF > $MNT/jail.local
+    cat <<EOF > "$MNT"/jail.local
 [DEFAULT]
 ignoreip = 127.0.0.1/8 ::1 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12
 findtime = 15m
@@ -310,15 +310,15 @@ action = %(action_)s
          %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_SSH", abuseipdb_category="18,22"]
 
 EOF
-    ssh $RASPI_SSH "sudo mv -f jail.local /etc/fail2ban/jail.d/jail.local; sudo chown root:root /etc/fail2ban/jail.d/jail.local"
-    ssh $RASPI_SSH "sudo sed -i 's/^#allowipv6 = auto/allowipv6 = auto/' /etc/fail2ban/fail2ban.conf"
-    ssh $RASPI_SSH "sudo service fail2ban restart"
+    ssh "$RASPI_SSH" "sudo mv -f jail.local /etc/fail2ban/jail.d/jail.local; sudo chown root:root /etc/fail2ban/jail.d/jail.local"
+    ssh "$RASPI_SSH" "sudo sed -i 's/^#allowipv6 = auto/allowipv6 = auto/' /etc/fail2ban/fail2ban.conf"
+    ssh "$RASPI_SSH" "sudo service fail2ban restart"
 
     # Dynamic DNS with Gandi
     if [ -n "$GANDI_API_KEY" ]
     then
-        mkdir -p $MNT/bin
-        cat <<\EOF > $MNT/bin/gdns
+        mkdir -p "$MNT"/bin
+        cat <<\EOF > "$MNT"/bin/gdns
 #!/bin/bash
 
 API_KEY=GANDI_API_KEY
@@ -415,15 +415,15 @@ fi
 
 /home/pi/bin/unban.py
 EOF
-        sed -i "s/GANDI_API_KEY/$GANDI_API_KEY/" $MNT/bin/gdns
-        sed -i "s/GANDI_DOMAIN/$GANDI_DOMAIN/" $MNT/bin/gdns
-        sed -i "s/GANDI_SUBDOMAIN/$GANDI_SUBDOMAIN/" $MNT/bin/gdns
-        sed -i "s/GANDI_IPVERSION/$GANDI_IPVERSION/" $MNT/bin/gdns
-        sed -i "s/CERTBOT_RENEW/$CERTBOT_RENEW/" $MNT/bin/gdns
-        chmod +x $MNT/bin/gdns
+        sed -i "s/GANDI_API_KEY/$GANDI_API_KEY/" "$MNT"/bin/gdns
+        sed -i "s/GANDI_DOMAIN/$GANDI_DOMAIN/" "$MNT"/bin/gdns
+        sed -i "s/GANDI_SUBDOMAIN/$GANDI_SUBDOMAIN/" "$MNT"/bin/gdns
+        sed -i "s/GANDI_IPVERSION/$GANDI_IPVERSION/" "$MNT"/bin/gdns
+        sed -i "s/CERTBOT_RENEW/$CERTBOT_RENEW/" "$MNT"/bin/gdns
+        chmod +x "$MNT"/bin/gdns
 
-        mkdir -p $MNT/bin
-        cat <<\EOF > $MNT/bin/unban.py
+        mkdir -p "$MNT"/bin
+        cat <<\EOF > "$MNT"/bin/unban.py
 #!/usr/bin/env python
 
 import os
@@ -449,15 +449,15 @@ if reload:
     os.system("sudo fail2ban-client unban "+server_ip)
     os.system("sudo fail2ban-client reload")
 EOF
-        chmod +x $MNT/bin/unban.py
+        chmod +x "$MNT"/bin/unban.py
 
-        ssh $RASPI_SSH "echo '*/5 * * * * pi /home/pi/bin/gdns >/dev/null 2>&1' | sudo tee /etc/cron.d/gdns"
+        ssh "$RASPI_SSH" "echo '*/5 * * * * pi /home/pi/bin/gdns >/dev/null 2>&1' | sudo tee /etc/cron.d/gdns"
     fi
 
     # Dynamic DNS with OVH
     if [ -n "$OVH_LOGIN" ]
     then
-        cat <<EOF > $MNT_ROOT/tmp/ddclient.conf
+        cat <<EOF > "$MNT_ROOT"/tmp/ddclient.conf
 # Configuration file for ddclient generated by rrpi
 #
 # /etc/ddclient.conf
@@ -470,21 +470,21 @@ login=$OVH_LOGIN
 password='$OVH_PASSWORD'
 $OVH_SUBDOMAIN.$OVH_DOMAIN
 EOF
-        ssh $RASPI_SSH "sudo mv /tmp/ddclient.conf /etc/ddclient.conf"
-        ssh $RASPI_SSH "sudo chown root:root /etc/ddclient.conf"
-        ssh $RASPI_SSH "sudo service ddclient restart"
+        ssh "$RASPI_SSH" "sudo mv /tmp/ddclient.conf /etc/ddclient.conf"
+        ssh "$RASPI_SSH" "sudo chown root:root /etc/ddclient.conf"
+        ssh "$RASPI_SSH" "sudo service ddclient restart"
     fi
 
-    mkdir -p $MNT/bin
-    cat <<\EOF > $MNT/bin/unban-all
+    mkdir -p "$MNT"/bin
+    cat <<\EOF > "$MNT"/bin/unban-all
 #!/bin/bash
 
 sudo fail2ban-client unban --all
 EOF
-    chmod +x $MNT/bin/unban-all
+    chmod +x "$MNT"/bin/unban-all
 
-    mkdir -p $MNT/bin
-    cat <<\EOF_status > $MNT/bin/status
+    mkdir -p "$MNT"/bin
+    cat <<\EOF_status > "$MNT"/bin/status
 #!/bin/bash
 cat <<EOF
 ---
@@ -511,9 +511,9 @@ $(/home/pi/bin/gdns || echo "DNS status N/A")
 EOF
 
 EOF_status
-    chmod +x $MNT/bin/status
+    chmod +x "$MNT"/bin/status
 
-    cat <<\EOF_netmon > $MNT/bin/netmon
+    cat <<\EOF_netmon > "$MNT"/bin/netmon
 #!/bin/bash
 
 CSV=/var/www/html/netmon.csv
@@ -607,19 +607,19 @@ do
     sleep 15s
 done
 EOF_netmon
-    sed -i "s/ROUTER_IP/$NETMON_ROUTER/" $MNT/bin/netmon
-    sed -i "s/BOX_IP/$NETMON_BOX/" $MNT/bin/netmon
-    sed -i "s/WEB1_URL/$NETMON_WEB_1/" $MNT/bin/netmon
-    sed -i "s/WEB2_URL/$NETMON_WEB_2/" $MNT/bin/netmon
-    sed -i "s/WEB3_URL/$NETMON_WEB_3/" $MNT/bin/netmon
-    chmod +x $MNT/bin/netmon
+    sed -i "s/ROUTER_IP/$NETMON_ROUTER/" "$MNT"/bin/netmon
+    sed -i "s/BOX_IP/$NETMON_BOX/" "$MNT"/bin/netmon
+    sed -i "s/WEB1_URL/$NETMON_WEB_1/" "$MNT"/bin/netmon
+    sed -i "s/WEB2_URL/$NETMON_WEB_2/" "$MNT"/bin/netmon
+    sed -i "s/WEB3_URL/$NETMON_WEB_3/" "$MNT"/bin/netmon
+    chmod +x "$MNT"/bin/netmon
     if $NETMON_ENABLE
     then
-        ssh $RASPI_SSH "echo '*/5 * * * * pi nohup bash /home/pi/bin/netmon &' | sudo tee /etc/cron.d/netmon"
+        ssh "$RASPI_SSH" "echo '*/5 * * * * pi nohup bash /home/pi/bin/netmon &' | sudo tee /etc/cron.d/netmon"
     fi
 
     # periodic backup with timeshift
-    cat <<EOF_timeshift > $MNT/bin/timeshift-check
+    cat <<EOF_timeshift > "$MNT"/bin/timeshift-check
 #!/bin/bash
 
 sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --on
@@ -629,10 +629,10 @@ trap "sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --off" E
 sudo timeshift --check --scripted
 sudo rm -vf /etc/cron.d/timeshift-hourly
 EOF_timeshift
-    chmod +x $MNT/bin/timeshift-check
-    ssh $RASPI_SSH "echo '0 2 * * * pi /home/pi/bin/timeshift-check' | sudo tee /etc/cron.d/timeshift-check"
+    chmod +x "$MNT"/bin/timeshift-check
+    ssh "$RASPI_SSH" "echo '0 2 * * * pi /home/pi/bin/timeshift-check' | sudo tee /etc/cron.d/timeshift-check"
 
-    ssh $RASPI_SSH "sudo sed -i \
+    ssh "$RASPI_SSH" "sudo sed -i \
         -e 's#\"schedule_monthly\" : \"false\"#\"schedule_monthly\" : \"true\"#' \
         -e 's#\"schedule_weekly\" : \"false\"#\"schedule_weekly\" : \"true\"#' \
         -e 's#\"schedule_daily\" : \"false\"#\"schedule_daily\" : \"true\"#' \
@@ -641,23 +641,23 @@ EOF_timeshift
 
     # Forgejo (https://forgejo.org/docs/latest/admin/installation-binary/)
     FORGEJO_LATEST=$(curl -Ls -o /dev/null -w "%{url_effective}" https://codeberg.org/forgejo/forgejo/releases/latest)
-    FORGEJO_TAG=$(basename $FORGEJO_LATEST)
+    FORGEJO_TAG=$(basename "$FORGEJO_LATEST")
     FORGEJO_VERSION=${FORGEJO_TAG#v}
     FORGEJO_URL=https://codeberg.org/forgejo/forgejo/releases/download/$FORGEJO_TAG/forgejo-$FORGEJO_VERSION-linux-arm64.xz
-    curl $FORGEJO_URL -o $MNT_ROOT/tmp/$(basename $FORGEJO_URL)
-    xz -d -c $MNT_ROOT/tmp/$(basename $FORGEJO_URL) > $MNT_ROOT/tmp/forgejo
-    ssh $RASPI_SSH "sudo cp /tmp/forgejo /usr/local/bin/forgejo"
-    ssh $RASPI_SSH "sudo chmod 755 /usr/local/bin/forgejo"
-    ssh $RASPI_SSH "sudo apt install git git-lfs"
-    ssh $RASPI_SSH "sudo adduser --system --shell /bin/bash --gecos 'Git Version Control' --group --disabled-password --home /home/git git"
-    ssh $RASPI_SSH "sudo mkdir -p /var/lib/forgejo"
-    ssh $RASPI_SSH "sudo chown git:git /var/lib/forgejo && sudo chmod 750 /var/lib/forgejo"
-    ssh $RASPI_SSH "sudo mkdir -p /etc/forgejo"
-    ssh $RASPI_SSH "sudo chown root:git /etc/forgejo && sudo chmod 770 /etc/forgejo"
-    curl https://codeberg.org/forgejo/forgejo/raw/branch/forgejo/contrib/systemd/forgejo.service -o $MNT_ROOT/tmp/forgejo.service
-    ssh $RASPI_SSH "sudo cp /tmp/forgejo.service /etc/systemd/system/forgejo.service"
-    ssh $RASPI_SSH "sudo systemctl enable forgejo.service"
-    ssh $RASPI_SSH "sudo systemctl start forgejo.service"
+    curl "$FORGEJO_URL" -o "$MNT_ROOT"/tmp/"$(basename "$FORGEJO_URL")"
+    xz -d -c "$MNT_ROOT"/tmp/"$(basename "$FORGEJO_URL")" > "$MNT_ROOT"/tmp/forgejo
+    ssh "$RASPI_SSH" "sudo cp /tmp/forgejo /usr/local/bin/forgejo"
+    ssh "$RASPI_SSH" "sudo chmod 755 /usr/local/bin/forgejo"
+    ssh "$RASPI_SSH" "sudo apt install git git-lfs"
+    ssh "$RASPI_SSH" "sudo adduser --system --shell /bin/bash --gecos 'Git Version Control' --group --disabled-password --home /home/git git"
+    ssh "$RASPI_SSH" "sudo mkdir -p /var/lib/forgejo"
+    ssh "$RASPI_SSH" "sudo chown git:git /var/lib/forgejo && sudo chmod 750 /var/lib/forgejo"
+    ssh "$RASPI_SSH" "sudo mkdir -p /etc/forgejo"
+    ssh "$RASPI_SSH" "sudo chown root:git /etc/forgejo && sudo chmod 770 /etc/forgejo"
+    curl https://codeberg.org/forgejo/forgejo/raw/branch/forgejo/contrib/systemd/forgejo.service -o "$MNT_ROOT"/tmp/forgejo.service
+    ssh "$RASPI_SSH" "sudo cp /tmp/forgejo.service /etc/systemd/system/forgejo.service"
+    ssh "$RASPI_SSH" "sudo systemctl enable forgejo.service"
+    ssh "$RASPI_SSH" "sudo systemctl start forgejo.service"
 
     sshfs_umount
 }
@@ -668,7 +668,7 @@ EOF_timeshift
 
 install_apache()
 {
-    ssh $RASPI_SSH "sudo apt install \
+    ssh "$RASPI_SSH" "sudo apt install \
         apache2 mariadb-server libapache2-mod-php \
         php-gd php-json php-mysql php-curl php-mbstring php-intl php-imagick php-xml php-zip \
         certbot python3-certbot-apache \
@@ -680,16 +680,16 @@ install_apache()
     # .htaccess
 
     # https://raspberry-pi.fr/activer-fichiers-htaccess-raspbian/
-    ssh $RASPI_SSH "sudo sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf"
+    ssh "$RASPI_SSH" "sudo sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf"
 
     # Unlimited uploads with Nextcloud
-    cat <<\EOF > $MNT/999-nextcloud_large_files.conf
+    cat <<\EOF > "$MNT"/999-nextcloud_large_files.conf
 LimitRequestBody 17179869184
 EOF
-    ssh $RASPI_SSH "sudo mv 999-nextcloud_large_files.conf /etc/apache2/sites-enabled"
+    ssh "$RASPI_SSH" "sudo mv 999-nextcloud_large_files.conf /etc/apache2/sites-enabled"
 
-    ssh $RASPI_SSH "[ -f /var/www/html/index.html ] && sudo mv /var/www/html/index.html /var/www/html/noindex.html"
-    cat <<\EOF > $MNT/.htaccess
+    ssh "$RASPI_SSH" "[ -f /var/www/html/index.html ] && sudo mv /var/www/html/index.html /var/www/html/noindex.html"
+    cat <<\EOF > "$MNT"/.htaccess
 # Custom 404 errors
 ErrorDocument 404 /404.html
 
@@ -705,7 +705,7 @@ order allow,deny
 deny from all
 </Files>
 EOF
-    cat <<\EOF > $MNT/404.html
+    cat <<\EOF > "$MNT"/404.html
 <html>
 <head>
 <title>BSOD</title>
@@ -727,16 +727,16 @@ EOF
 </body>
 </html>
 EOF
-    ssh $RASPI_SSH "sudo chown root:root .htaccess; sudo mv .htaccess /var/www/html/.htaccess"
-    ssh $RASPI_SSH "sudo chown root:root 404.html;  sudo mv 404.html /var/www/html/404.html"
+    ssh "$RASPI_SSH" "sudo chown root:root .htaccess; sudo mv .htaccess /var/www/html/.htaccess"
+    ssh "$RASPI_SSH" "sudo chown root:root 404.html;  sudo mv 404.html /var/www/html/404.html"
 
-    ssh $RASPI_SSH "sudo systemctl restart apache2"
+    ssh "$RASPI_SSH" "sudo systemctl restart apache2"
 
-    ssh $RASPI_SSH "
+    ssh "$RASPI_SSH" "
         sudo ufw allow \"WWW Full\"
     "
 
-    cat <<EOF > $MNT/apache.local
+    cat <<EOF > "$MNT"/apache.local
 [apache-auth]
 enabled  = true
 action = %(action_)s
@@ -793,10 +793,10 @@ action = %(action_)s
          %(action_abuseipdb)s[abuseipdb_apikey="$ABUSEIPDB_API_KEY_WEB", abuseipdb_category="15,21"]
 
 EOF
-    ssh $RASPI_SSH "sudo mv -f apache.local /etc/fail2ban/jail.d/apache.local; sudo chown root:root /etc/fail2ban/jail.d/apache.local"
-    ssh $RASPI_SSH "sudo service fail2ban restart"
+    ssh "$RASPI_SSH" "sudo mv -f apache.local /etc/fail2ban/jail.d/apache.local; sudo chown root:root /etc/fail2ban/jail.d/apache.local"
+    ssh "$RASPI_SSH" "sudo service fail2ban restart"
 
-    cat <<\EOF | sed "s/SERVER_NAME/$GANDI_SUBDOMAIN.$GANDI_DOMAIN/" > $MNT/status.php
+    cat <<\EOF | sed "s/SERVER_NAME/$GANDI_SUBDOMAIN.$GANDI_DOMAIN/" > "$MNT"/status.php
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
@@ -827,7 +827,7 @@ DNS IP    : <?php echo gethostbyname("SERVER_NAME"); ?>
 </body>
 </html>
 EOF
-    ssh $RASPI_SSH "sudo mv -f status.php /var/www/html/status.php; sudo chown root:root /var/www/html/status.php"
+    ssh "$RASPI_SSH" "sudo mv -f status.php /var/www/html/status.php; sudo chown root:root /var/www/html/status.php"
 
     sshfs_umount
 }
@@ -838,13 +838,13 @@ EOF
 
 install_radicale()
 {
-    ssh $RASPI_SSH "sudo apt install python3-pip"
-    ssh $RASPI_SSH "python3 -m pip install --upgrade radicale"
+    ssh "$RASPI_SSH" "sudo apt install python3-pip"
+    ssh "$RASPI_SSH" "python3 -m pip install --upgrade radicale"
 
     sshfs_mount
 
-    mkdir -p $MNT/.config/radicale
-    cat <<\EOF > $MNT/.config/radicale/config
+    mkdir -p "$MNT"/.config/radicale
+    cat <<\EOF > "$MNT"/.config/radicale/config
 [server]
 # Bind all addresses
 hosts = 0.0.0.0:5232, [::]:5232
@@ -857,14 +857,14 @@ htpasswd_encryption = md5
 [storage]
 filesystem_folder = ~/.local/var/lib/radicale/collections
 EOF
-    if ! [ -f $MNT/.config/radicale/users ]
+    if ! [ -f "$MNT"/.config/radicale/users ]
     then
         echo -n "Radicale user    : "; read -r RADICALE_USER
         echo -n "Radicale password: "; read -r RADICALE_PASSWORD
-        htpasswd -mbc $MNT/.config/radicale/users "$RADICALE_USER" "$RADICALE_PASSWORD"
+        htpasswd -mbc "$MNT"/.config/radicale/users "$RADICALE_USER" "$RADICALE_PASSWORD"
     fi
-    mkdir -p $MNT/.config/systemd/user/
-    cat <<\EOF > $MNT/.config/systemd/user/radicale.service
+    mkdir -p "$MNT"/.config/systemd/user/
+    cat <<\EOF > "$MNT"/.config/systemd/user/radicale.service
 [Unit]
 Description=A simple CalDAV (calendar) and CardDAV (contact) server
 
@@ -878,9 +878,9 @@ EOF
 
     sshfs_umount
 
-    ssh $RASPI_SSH "systemctl --user enable radicale"
-    ssh $RASPI_SSH "systemctl --user stop radicale"
-    ssh $RASPI_SSH "systemctl --user start radicale"
+    ssh "$RASPI_SSH" "systemctl --user enable radicale"
+    ssh "$RASPI_SSH" "systemctl --user stop radicale"
+    ssh "$RASPI_SSH" "systemctl --user start radicale"
 }
 
 ####################################################################
@@ -889,12 +889,12 @@ EOF
 
 install_qbittorrent()
 {
-    ssh $RASPI_SSH "sudo apt install qbittorrent-nox tmux"
+    ssh "$RASPI_SSH" "sudo apt install qbittorrent-nox tmux"
 
     sshfs_mount
 
-    mkdir -p $MNT/.config/qBittorrent $MNT/Downloads
-    cat <<\EOF > $MNT/.config/qBittorrent/qBittorrent.conf
+    mkdir -p "$MNT"/.config/qBittorrent "$MNT"/Downloads
+    cat <<\EOF > "$MNT"/.config/qBittorrent/qBittorrent.conf
 [AutoRun]
 OnTorrentAdded\Enabled=false
 OnTorrentAdded\Program=
@@ -1024,57 +1024,57 @@ install_nextcloud()
     local NEXTCLOUD_URL=https://download.nextcloud.com/server/releases/latest.tar.bz2
 
     # NextCloud prerequisites
-    ssh $RASPI_SSH "sudo apt install apache2 mariadb-server libapache2-mod-php"
-    ssh $RASPI_SSH "sudo apt install php-gd php-json php-mysql php-curl php-mbstring php-intl php-imagick php-xml php-zip"
-    ssh $RASPI_SSH "sudo apt install certbot python3-certbot-apache"
-    ssh $RASPI_SSH "sudo apt install php-apcu php-bz2 php-gmp php-bcmath ffmpeg"
+    ssh "$RASPI_SSH" "sudo apt install apache2 mariadb-server libapache2-mod-php"
+    ssh "$RASPI_SSH" "sudo apt install php-gd php-json php-mysql php-curl php-mbstring php-intl php-imagick php-xml php-zip"
+    ssh "$RASPI_SSH" "sudo apt install certbot python3-certbot-apache"
+    ssh "$RASPI_SSH" "sudo apt install php-apcu php-bz2 php-gmp php-bcmath ffmpeg"
 
     sshfs_mount
 
-    cat <<EOF > $MNT/bin/nextcloud-off
+    cat <<EOF > "$MNT"/bin/nextcloud-off
 #!/bin/bash
 sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --on
 EOF
 
-    cat <<EOF > $MNT/bin/nextcloud-on
+    cat <<EOF > "$MNT"/bin/nextcloud-on
 #!/bin/bash
 sudo -u www-data php /var/www/html/nextcloud/occ maintenance:mode --off
 EOF
 
-    chmod +x $MNT/bin/nextcloud-{on,off}
+    chmod +x "$MNT"/bin/nextcloud-{on,off}
 
-    if ! [ -d $MNT_ROOT/var/www/html/nextcloud ]
+    if ! [ -d "$MNT_ROOT"/var/www/html/nextcloud ]
     then
 
         # Download NextCloud
         wget -c $NEXTCLOUD_URL -O "$RASPIOS_DIR/$(basename $NEXTCLOUD_URL)"
 
         #echo "Copying $(basename $NEXTCLOUD_URL)"
-        mkdir -p $MNT/Downloads
-        cp -uv "$RASPIOS_DIR/$(basename $NEXTCLOUD_URL)" $MNT/Downloads
+        mkdir -p "$MNT"/Downloads
+        cp -uv "$RASPIOS_DIR/$(basename $NEXTCLOUD_URL)" "$MNT"/Downloads
         echo "Extracting $(basename $NEXTCLOUD_URL)"
         # shellcheck disable=SC2029
-        ssh $RASPI_SSH "sudo tar xjf ~/Downloads/$(basename $NEXTCLOUD_URL) -C /var/www/html"
-        ssh $RASPI_SSH "cd /var/www/html && sudo chmod 750 nextcloud -R && sudo chown www-data:www-data nextcloud -R"
+        ssh "$RASPI_SSH" "sudo tar xjf ~/Downloads/$(basename $NEXTCLOUD_URL) -C /var/www/html"
+        ssh "$RASPI_SSH" "cd /var/www/html && sudo chmod 750 nextcloud -R && sudo chown www-data:www-data nextcloud -R"
 
         # MySQL configuration
         echo -n "MySQL nextcloud password: "; read -r MYSQL_PASSWORD
-        cat <<EOF > $MNT_ROOT/tmp/mysqlconf
+        cat <<EOF > "$MNT_ROOT"/tmp/mysqlconf
 CREATE USER 'nextcloud' IDENTIFIED BY '$MYSQL_PASSWORD';
 CREATE DATABASE nextcloud;
 GRANT ALL PRIVILEGES ON nextcloud.* TO 'nextcloud'@localhost IDENTIFIED BY '$MYSQL_PASSWORD';
 FLUSH PRIVILEGES;
 quit
 EOF
-        ssh $RASPI_SSH "sudo mysql < /tmp/mysqlconf"
+        ssh "$RASPI_SSH" "sudo mysql < /tmp/mysqlconf"
 
     fi
 
     # https://docs.nextcloud.com/server/latest/admin_manual/configuration_server/background_jobs_configuration.html?highlight=cron#cron
-    ssh $RASPI_SSH "echo '*/5 * * * * www-data php /var/www/html/nextcloud/cron.php' | sudo tee /etc/cron.d/nextcloud-cron"
+    ssh "$RASPI_SSH" "echo '*/5 * * * * www-data php /var/www/html/nextcloud/cron.php' | sudo tee /etc/cron.d/nextcloud-cron"
 
     # Fix some Nextcloud warnings
-    ssh $RASPI_SSH "sudo sed -i 's/^memory_limit.*/memory_limit = 512M/' \$(php -i | grep php.ini | head -1 | sed 's#[^/]*##' | sed 's#/cli#/apache2#')/php.ini"
+    ssh "$RASPI_SSH" "sudo sed -i 's/^memory_limit.*/memory_limit = 512M/' \$(php -i | grep php.ini | head -1 | sed 's#[^/]*##' | sed 's#/cli#/apache2#')/php.ini"
 
     cat <<EOF
 Please add the following parameters to /var/www/html/nextcloud/config/config.php
@@ -1109,23 +1109,23 @@ EOF
 
 install_upnp()
 {
-    ssh $RASPI_SSH "sudo apt install minidlna"
+    ssh "$RASPI_SSH" "sudo apt install minidlna"
 
     sshfs_mount
 
-    mkdir -p $MNT/dlna
+    mkdir -p "$MNT"/dlna
 
-#    cat <<EOF > $MNT_ROOT/etc/minidlna.conf
+#    cat <<EOF > "$MNT_ROOT"/etc/minidlna.conf
 #media_dir=A,/home/pi/Music
 #media_dir=P,/home/pi/Pictures
 #media_dir=V,/home/pi/Videos
 #friendly_name=Raspberry Pi
 #inotify=yes
 #EOF
-    ssh $RASPI_SSH "sudo sed -i 's#^media_dir=.*#media_dir=/home/dlna#' /etc/minidlna.conf"
-    ssh $RASPI_SSH "sudo service minidlna stop"
-    ssh $RASPI_SSH "sudo service minidlna start"
-    ssh $RASPI_SSH "sudo update-rc.d minidlna defaults"
+    ssh "$RASPI_SSH" "sudo sed -i 's#^media_dir=.*#media_dir=/home/dlna#' /etc/minidlna.conf"
+    ssh "$RASPI_SSH" "sudo service minidlna stop"
+    ssh "$RASPI_SSH" "sudo service minidlna start"
+    ssh "$RASPI_SSH" "sudo update-rc.d minidlna defaults"
 
     sshfs_umount
 }
