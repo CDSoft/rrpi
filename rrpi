@@ -157,6 +157,10 @@ install_base()
     sed -i '/luax env/d' "$MNT"/.profile
     echo "eval \"\$(\\luax env)\"" >> "$MNT"/.profile
 
+    ssh "$RASPI_SSH" "sudo sed -i '/^tmpfs/d' /etc/fstab"
+    ssh "$RASPI_SSH" "sudo sh -c \"echo 'tmpfs /tmp tmpfs defaults,noatime,nosuid 0 0' >> /etc/fstab\""
+    ssh "$RASPI_SSH" "sudo sh -c \"echo 'tmpfs /var/log tmpfs defaults,noatime,nosuid,size=64m 0 0' >> /etc/fstab\""
+
     cat <<\EOF > "$MNT"/.bash_aliases
 export PATH=~/.local/bin:~/bin:$PATH
 
