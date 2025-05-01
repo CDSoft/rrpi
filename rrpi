@@ -192,15 +192,39 @@ function gd()
 EOF
 
     cat <<EOF > "$MNT"/.tmux.conf
-# Use C-a instead of C-b
-#set -g prefix C-a
-#unbind-key C-b
+# https://hamvocke.com/blog/a-guide-to-customizing-your-tmux-conf/
+
+#################################################
+# Less awkward prefix keys
+#################################################
+
+# remap prefix from 'C-b' to 'C-a'
+#unbind C-b
+#set-option -g prefix C-a
 #bind-key C-a send-prefix
+
+set -g base-index 1
+
+#################################################
+# Intuitive Split Commands
+#################################################
+
+# split panes using | and -
+bind h split-window -h -c "#{pane_current_path}"
+bind v split-window -v -c "#{pane_current_path}"
+unbind '"'
+unbind %
+
+#################################################
+# Easy Config Reloads
+#################################################
 
 # reload config file (change file location to your the tmux.conf you want to use)
 bind r source-file ~/.tmux.conf
 
-set -g base-index 1
+#################################################
+# Fast Pane-Switching
+#################################################
 
 # switch panes using Alt-arrow without prefix
 bind -n M-Left select-pane -L
@@ -215,35 +239,79 @@ set -s escape-time 0
 bind -n M-S-Left select-window -t:-
 bind -n M-S-Right select-window -t:+
 
-# Enable mouse control (clickable windows, panes, resizable panes)
-#set -g mouse-select-window on
-#set -g mouse-select-pane on
-#set -g mouse-resize-pane on
+# open new panes on the same directory
+bind c new-window -c "#{pane_current_path}"
 
-# Enable mouse mode (tmux 2.1 and above)
+set-option -g history-limit 10000
+
+#################################################
+# Mouse mode
+#################################################
+
+# Enable mouse control (clickable windows, panes, resizable panes)
 set -g mouse on
+
+#################################################
+# Stop Renaming Windows Automatically
+#################################################
 
 # don't rename windows automatically
 #set-option -g allow-rename off
 
-# open new panes on the same directory
-bind c new-window -c "#{pane_current_path}"
-bind '"' split-window -c "#{pane_current_path}"
-bind % split-window -h -c "#{pane_current_path}"
+#################################################
+# Changing the Look of tmux
+#################################################
 
-set-option -g history-limit 10000
+# DESIGN TWEAKS
 
-# Copy mode
-# - https://superuser.com/questions/395158/tmux-copy-mode-select-text-block
-# - https://unix.stackexchange.com/questions/450184/in-tmux-how-to-set-shortcut-for-copy-mode
-bind-key -n 'C-M-c' copy-mode       # Ctrl-Alt-C => copy mode
-setw -g mode-keys vi
-unbind-key -T copy-mode-vi v
-bind-key -T copy-mode-vi 'v' send -X begin-selection     # Begin selection in copy mode.
-bind-key -T copy-mode-vi 'C-v' send -X rectangle-toggle  # Begin selection in copy mode.
-bind-key -T copy-mode-vi 'y' send -X copy-selection      # Yank selection in copy mode.
+# don't do anything when a 'bell' rings
+#set -g visual-activity off
+#set -g visual-bell off
+#set -g visual-silence off
+#setw -g monitor-activity off
+#set -g bell-action none
 
+# clock mode
+setw -g clock-mode-colour yellow
+
+# copy mode
+setw -g mode-style 'fg=black bg=yellow dim'
+
+# panes
+set -g pane-border-style 'fg=grey'
+set -g pane-active-border-style 'fg=green'
+
+# statusbar
+set -g status-position bottom
+set -g status-justify left
+set -g status-style 'fg=white bg=blue'
+
+set -g status-left-style 'fg=black bg=yellow'
+set -g status-left ' #S '
+set -g status-left-length 16
+
+set -g status-right-style 'fg=black bg=yellow'
+set -g status-right ' %d/%m/%Y %H:%M '
+set -g status-right-length 60
+
+setw -g window-status-current-style 'fg=black bg=green'
+setw -g window-status-current-format ' #I #W '
+
+setw -g window-status-style 'fg=black bg=blue'
+setw -g window-status-format ' #I #W '
+
+setw -g window-status-bell-style 'fg=yellow bg=red bold'
+
+# messages
+set -g message-style 'fg=yellow bg=red bold'
+
+# Status bar hidden by default, toggle with Ctrl-Space
+set -g status off
+bind -n C-Space set status
+
+#################################################
 # Some parameters from https://github.com/tmux-plugins/tmux-sensible
+#################################################
 
 # Increase tmux messages display duration from 750ms to 4s
 set -g display-time 4000
@@ -255,32 +323,26 @@ set -g status-keys emacs
 # Focus events enabled for terminals that support them
 set -g focus-events on
 
-# interface
+#################################################
+# Copy mode
+#################################################
 
-#------------
-# pane
-#------------
-#set -g mouse-select-pane on
-#set -g pane-border-fg blue
-#set -g pane-active-border-fg green
+# Copy mode
+# - https://superuser.com/questions/395158/tmux-copy-mode-select-text-block
+# - https://unix.stackexchange.com/questions/450184/in-tmux-how-to-set-shortcut-for-copy-mode
+bind-key -n 'C-M-c' copy-mode       # Ctrl-Alt-C => copy mode
+setw -g mode-keys vi
+unbind-key -T copy-mode-vi v
+bind-key -T copy-mode-vi 'v' send -X begin-selection     # Begin selection in copy mode.
+bind-key -T copy-mode-vi 'C-v' send -X rectangle-toggle  # Begin selection in copy mode.
+bind-key -T copy-mode-vi 'y' send -X copy-selection      # Yank selection in copy mode.
 
-#------------
-# tabs
-#------------
-setw -g window-status-format "#[fg=white]#[bg=blue] #I #W "
-setw -g window-status-current-format "#[fg=black]#[bg=green] #I #W "
-#setw -g window-status-content-attr bold,blink,reverse
+# Navigate between prompts
+bind-key -n 'C-M-Up' copy-mode \;   send -X start-of-line \; send -X cursor-up   \; send -X search-backward ".*> .*"
+bind-key -T copy-mode-vi 'C-M-Up'   send -X start-of-line \; send -X cursor-up   \; send -X search-backward ".*> .*"
+bind-key -T copy-mode-vi 'C-M-Down' send -X start-of-line \; send -X cursor-down \; send -X search-forward  ".*> .*"
 
-#------------
-# status bar
-#------------
-set-option -g status-position bottom
-set -g status-fg white
-set -g status-bg blue
-set -g status-left-length 16
-set -g status-left ' #S | '
-set -g status-right-length 60
-set -g status-right '%d/%m/%Y | %H:%M '
+set-option -s set-clipboard off
 EOF
 
     ssh "$RASPI_SSH" "
